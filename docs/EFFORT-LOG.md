@@ -90,6 +90,11 @@ Protocol: /Users/jay/apps/EFFORT-LOG-PROTOCOL.md (canonical). Live board:
   the v1.3.0 release-train checklist — see new Planned row below._
 
 ## In Progress
+- **Codex autofix storm guard (CODEX, workflow/fleet-infra) — DONE-local 2026-07-05; awaiting push/PR.**
+  Scope: reduce caller `codex-autofix.yml` storm odds/frequency in Socratic.Trade and
+  Congress.Trade; shared reusable workflow inspected/documented for compatibility. Preserve manual
+  dispatch, round-cap behavior, and the shared reusable prompt/action infrastructure.
+
 - **Split `TICKER_ALIASES` into rename-vs-acquisition classes — SHARED-LIBRARY PORTION (MONET,
   `monet/sad-hermann-671f4d`) — DONE-local 2026-07-05 (committed `03d33bd`; owner push/PR/tag
   pending).** Additive, backward-compatible API in THIS package only: `TICKER_RENAMES` (FB→META,

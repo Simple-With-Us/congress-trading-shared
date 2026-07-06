@@ -8,6 +8,10 @@ name: Codex Autofix (Reusable)
 #   1. Make sure the repo has ANTHROPIC_API_KEY and (optionally) GH_PAT secrets.
 #   2. Create .github/workflows/codex-autofix.yml following the caller template in
 #      this repo's AGENTS.md or the existing Agentic Trading / Congress.Trade examples.
+#   3. Caller workflows should trigger on pull_request_review:submitted plus
+#      workflow_dispatch only. Do not trigger on pull_request_review_comment or
+#      issue_comment; one Codex review can contain many comments, and comment
+#      events can fan out into autofix storms.
 #
 # Org-level alternative (preferred):
 #   Move this file to jaywedgeworth22/.github/workflows/codex-autofix-reusable.yml
