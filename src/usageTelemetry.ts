@@ -86,6 +86,14 @@ export const UsageTelemetryEventSchema = z.object({
   windowStart: z.string().datetime().optional(),
   windowEnd: z.string().datetime().optional(),
   occurredAt: z.string().datetime().optional(),
+  // The provider-side call/generation id (e.g. OpenRouter's `id` on a
+  // completions response), pushed so the monitor can verify reported cost
+  // against the provider's own record (e.g. `GET /api/v1/generation?id=...`).
+  // CONTRACT: deliberately NOT part of `deriveUsageTelemetryIdempotencyKey`'s
+  // basis — adding it there would change the key for existing/replayed
+  // events. Keep the idempotency key derivation limited to sourceApp,
+  // provider, metricType, keyRef, and occurredAt.
+  providerRequestId: z.string().trim().min(1).max(200).optional(),
   metadata: UsageTelemetryMetadataSchema.optional(),
   idempotencyKey: z.string().trim().min(1).max(200).optional(),
 });

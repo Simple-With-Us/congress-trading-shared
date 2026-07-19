@@ -315,6 +315,88 @@ describe("deriveUsageTelemetryIdempotencyKey — edge cases", () => {
 });
 
 // ---------------------------------------------------------------------------
+// providerRequestId — additive field, MUST NOT change the idempotency key
+// ---------------------------------------------------------------------------
+
+describe("providerRequestId — idempotency key stays unchanged", () => {
+  it("key is byte-identical with vs without providerRequestId on the full parsed event", async () => {
+    // Same inputs as contract vector 4 above, so we can pin against its known hash.
+    const base = {
+      sourceApp: "congress-trade",
+      provider: "cloudflare",
+      metricType: "usage",
+      keyRef: "api-usage-monitor-lite",
+      occurredAt: "2026-01-15T10:30:00.000Z",
+    };
+
+    const withoutId = UsageTelemetryEventSchema.parse(base);
+    const withId = UsageTelemetryEventSchema.parse({
+      ...base,
+      providerRequestId: "gen-abc123xyz",
+    });
+
+    expect(withId.providerRequestId).toBe("gen-abc123xyz");
+    expect(withoutId.providerRequestId).toBeUndefined();
+
+    const keyWithoutId = await deriveUsageTelemetryIdempotencyKey(withoutId);
+    const keyWithId = await deriveUsageTelemetryIdempotencyKey(withId);
+
+    expect(keyWithId).toBeTruthy();
+    expect(keyWithId).toBe(keyWithoutId);
+    // Pin against the same contract vector used above (vector 4) to catch any
+    // accidental change to the basis/encoding, not just self-consistency.
+    expect(keyWithId).toBe(
+      "300ff3d978e9153e616c1e2d7d30d67cb20d6360fe37702df19f31e4338fcacb",
+    );
+  });
+
+  it("different providerRequestId values still collapse to the same key", async () => {
+    const base = {
+      sourceApp: "congress-trade",
+      provider: "openrouter",
+      metricType: "usage",
+      occurredAt: "2026-07-18T00:00:00.000Z",
+    };
+    const eventA = UsageTelemetryEventSchema.parse({ ...base, providerRequestId: "gen-aaa" });
+    const eventB = UsageTelemetryEventSchema.parse({ ...base, providerRequestId: "gen-bbb" });
+
+    const keyA = await deriveUsageTelemetryIdempotencyKey(eventA);
+    const keyB = await deriveUsageTelemetryIdempotencyKey(eventB);
+
+    expect(keyA).toBe(keyB);
+  });
+
+  it("accepts a well-formed providerRequestId and rejects an oversized one", () => {
+    const base = {
+      sourceApp: "congress-trade",
+      provider: "openrouter",
+      occurredAt: "2026-07-18T00:00:00.000Z",
+    };
+    expect(
+      UsageTelemetryEventSchema.safeParse({ ...base, providerRequestId: "gen-abc123" }).success,
+    ).toBe(true);
+    expect(
+      UsageTelemetryEventSchema.safeParse({ ...base, providerRequestId: "" }).success,
+    ).toBe(false);
+    expect(
+      UsageTelemetryEventSchema.safeParse({ ...base, providerRequestId: "x".repeat(201) }).success,
+    ).toBe(false);
+    expect(
+      UsageTelemetryEventSchema.safeParse({ ...base, providerRequestId: "x".repeat(200) }).success,
+    ).toBe(true);
+  });
+
+  it("is omitted entirely (not null/undefined key) when absent", () => {
+    const result = UsageTelemetryEventSchema.parse({
+      sourceApp: "congress-trade",
+      provider: "openrouter",
+      occurredAt: "2026-07-18T00:00:00.000Z",
+    });
+    expect("providerRequestId" in result).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Schema validation tests
 // ---------------------------------------------------------------------------
 

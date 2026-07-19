@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-07-18
+
+### Added
+- `callClassifier.ts`: shared call-classifier metadata contract for cross-provider request
+  enrichment and telemetry attribution. `CallClassifierContextSchema`/`CallClassifierContext`
+  describe a single outbound-call context (`sourceApp`, `environment?`, `service?`, `feature?`,
+  `keyRef?`, `gitSha?`, `user?`, `sessionId?`). Two pure builders project it into the shapes
+  producers need: `openrouterRequestEnrichment(ctx)` returns fields to merge into an OpenRouter
+  completions request body (top-level `user`/`session_id` plus `trace.metadata` — NOT a bare
+  top-level `metadata`), and `telemetryEventClassifier(ctx)` returns the same classifier keys as
+  a flat string map for a pushed `UsageTelemetryEvent`'s `metadata` field. `buildCallClassifier(ctx)`
+  returns both shapes at once. All three omit undefined optional keys and throw on an invalid
+  context (e.g. missing/blank `sourceApp`).
+- `UsageTelemetryEventSchema`: optional `providerRequestId` (string, max 200) for the
+  provider-side call/generation id (e.g. OpenRouter's `id`), enabling monitor-side spend
+  verification against the provider's own record.
+
+### Changed
+- **Consumer note:** `deriveUsageTelemetryIdempotencyKey`'s basis is unchanged —
+  `providerRequestId` is deliberately excluded, matching the existing `project` field's
+  precedent. Idempotency keys for existing/replayed events are byte-identical before and after
+  this release.
+
 ## [1.8.0] — 2026-07-15
 
 ### Added

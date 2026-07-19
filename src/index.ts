@@ -7,6 +7,7 @@ export * from "./schemas";
 export * from "./constants";
 export * from "./utils";
 export * from "./usageTelemetry";
+export * from "./callClassifier";
 export * from "./client";
 export * from "./events";
 export * from "./brackets";
