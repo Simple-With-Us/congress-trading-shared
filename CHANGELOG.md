@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.1] — 2026-08-05
+
+### Note
+- Same dual-anchor member performance as 2.5.0, re-tagged on `main` after squash-merge of #258 so consumer pins resolve to mainline history.
+
 ## [2.5.0] — 2026-08-04
 
 ### Added
