@@ -21,6 +21,12 @@ This repo is the shared TypeScript contract package for Congress.Trade (App A) a
   change consumers should pick up — prefer bumping `package.json` `version` first so the tag and the
   installed package's reported version agree.
 
+## Infisical — sole source of truth (owner-directed, 2026-10-03)
+
+- Infisical is the sole source of truth for secrets, env vars, and tunable settings knobs.  Per-user settings stay in each app's own store — never in Infisical.
+- Canonical policy and the runtime contract (load-at-startup, memory-only reads, background refresh, write-through admin saves) live in `INFISICAL.md` at the repo root.  Read it before touching any settings-related code.
+- Explicit exception to the "do not add app runtime code here" rule above: this repo is the pilot and home of the fleet-shared generic client `src/infisicalSettings.ts` (zero runtime deps, global `fetch` only).  It is generic infrastructure for all fleet TypeScript apps, not app runtime code.  Do not add app-specific settings modules here — consuming apps import this client and point it at their own Infisical projects.
+
 ## Verify
 
 Run these after package changes when feasible:
