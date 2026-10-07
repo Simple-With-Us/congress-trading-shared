@@ -4,6 +4,11 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, writeFile, rm, chmod, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import http from 'node:http';
+import childProcess from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
+import { Readable } from 'node:stream';
+import { EventEmitter } from 'node:events';
 import * as fleet from './fleet.mjs';
 import { parseProfile, assertSafeText } from './profiles.mjs';
 
@@ -14,7 +19,8 @@ process.on('exit', () => { globalThis.fetch = originalFetch; });
 const { validateInput, validatePull, sourcePath, selectFindings, collectThreads, api,
   snapshot, budgetPolicy, reserve, validateReservation, validateScan, scanDirectory, applyEdits, generate, publish,
   providerFrom, chatRequest, requestEdits, SYSTEM_PROMPT, MODEL_BASE_URLS, schema,
-  fixBranch, attemptRef, KODY, LIMITS, MODEL } = fleet;
+  startProxy, claudeArguments, fixBranch, attemptRef, KODY, LIMITS, MODEL, BUDGET_CLI_MODEL,
+  BUDGET_PROXY_LIMITS } = fleet;
 const head = 'a'.repeat(40);
 const treeSha = 'b'.repeat(40);
 const blobSha = 'e'.repeat(40);
@@ -726,6 +732,120 @@ test('generation writes only a validated answer and never sends GitHub or unrela
       KODY_MODEL_BASE_URL: 'https://evil.example/v1' }, reservationFor(data), scanReceipt(data),
     async () => assert.fail('Unreviewed endpoints must never be called.')), /base URL/);
   } finally { await rm(dir, { recursive: true, force: true }); }
+});
+test('CLI configuration removes tools, hooks, session state, and unrelated settings', () => {
+  const args = claudeArguments();
+  assert(args.includes('--bare')); assert.equal(args[args.indexOf('--tools') + 1], '');
+  assert.equal(args[args.indexOf('--setting-sources') + 1], '');
+  assert(args.includes('--strict-mcp-config')); assert(args.includes('--no-session-persistence'));
+  assert(args.includes('--no-chrome')); assert(!args.includes('--dangerously-skip-permissions'));
+  assert.equal(args[args.indexOf('--model') + 1], BUDGET_CLI_MODEL);
+  assert.equal(args[args.indexOf('--max-budget-usd') + 1], '0.50');
+});
+
+// Exercise the proxy handler with synthetic streams, never a listening socket.
+async function withInMemoryServer(callback) {
+  const original = http.createServer; let handler;
+  const server = { once() { return this; }, listen(_port, host, done) {
+    assert.equal(host, '127.0.0.1'); queueMicrotask(done);
+  }, address() { return { port: 12345 }; }, closeAllConnections() {}, close(done) { done(); } };
+  http.createServer = callback => { handler = callback; return server; };
+  syncBuiltinESMExports();
+  const request = async (body, options = {}) => {
+    const req = Readable.from([Buffer.from(options.raw ?? JSON.stringify(body))]);
+    req.method = options.method ?? 'POST'; req.url = options.path ?? '/v1/messages';
+    const response = { status: null, body: '', headersSent: false,
+      writeHead(status) { this.status = status; this.headersSent = true; },
+      write(chunk) { this.body += Buffer.from(chunk).toString(); },
+      end(chunk) { if (chunk) this.body += String(chunk); } };
+    await handler(req, response); return response;
+  };
+  try { await callback(request); }
+  finally { http.createServer = original; syncBuiltinESMExports(); }
+}
+test('in-memory proxy rejects unrelated routes and hard-caps request count before the budget gateway', async () => {
+  await withInMemoryServer(async request => {
+    const calls = [];
+    const proxy = await startProxy({ request: async body => {
+      calls.push(body); return new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } });
+    } });
+    try {
+      assert.equal((await request({}, { path: '/evil' })).status, 400);
+      assert.equal((await request({}, { method: 'GET' })).status, 400);
+      assert.equal((await request({ model: 'other' })).status, 429);
+      assert.equal((await request({}, { raw: 'x'.repeat(LIMITS.requestBytes + 1) })).status, 413);
+      for (let n = 0; n < BUDGET_PROXY_LIMITS.requests; n++) assert.equal((await request({ model: BUDGET_CLI_MODEL })).status, 200);
+      assert.equal((await request({ model: BUDGET_CLI_MODEL })).status, 429);
+      assert.equal(calls.length, BUDGET_PROXY_LIMITS.requests);
+      assert.equal((await request({}, { raw: 'invalid-json' })).status, 502);
+    } finally { await proxy.close(); }
+  });
+});
+test('missing gateway and ambiguous budget/provider failures lock the proxy without raw error disclosure', async () => {
+  for (const gateway of [null, { request: async () => { throw new Error('sensitive upstream error'); } }]) {
+    await withInMemoryServer(async request => {
+      const proxy = await startProxy(gateway);
+      try {
+        const first = await request({ model: BUDGET_CLI_MODEL });
+        assert.equal(first.status, 502); assert(!first.body.includes('sensitive'));
+        assert.equal((await request({ model: BUDGET_CLI_MODEL })).status, 502);
+      } finally { await proxy.close(); }
+    });
+  }
+});
+test('expired or revoked approval at proxy request time prevents even a mocked gateway call', async () => {
+  await withInMemoryServer(async request => {
+    let calls = 0;
+    const proxy = await startProxy({ request: async () => { calls++; return new Response('{}'); } },
+      () => { throw new Error('Approval expired.'); });
+    try { assert.equal((await request({ model: BUDGET_CLI_MODEL })).status, 502); assert.equal(calls, 0); }
+    finally { await proxy.close(); }
+  });
+});
+test('generation remains disabled before CLI launch even with otherwise valid local receipts', async () => {
+  const data = packageData();
+  await assert.rejects(generate(data, '/tmp/not-written-disabled-budget.json', { ...env, DEEPSEEK_API_KEY: 'fixture-only' },
+    reservationFor(data), scanReceipt(data), async () => assert.fail('No network allowed.')), /gateway is disabled|MODEL_API_KEY/);
+});
+test('generation uses only approved source and a credential-free CLI environment with fake processes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'fleet-offline-generate-budget-'));
+  const originalSpawn = childProcess.spawn; const launched = [];
+  const data = packageData(), edits = answer();
+  childProcess.spawn = (command, args, options) => {
+    launched.push({ command, args, options });
+    const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
+    child.kill = () => {};
+    child.stdin = new EventEmitter();
+    child.stdin.end = text => {
+      launched.at(-1).prompt = JSON.parse(text);
+      queueMicrotask(() => {
+        child.stdout.emit('data', Buffer.from(JSON.stringify({ is_error: false, structured_output: edits })));
+        child.emit('close', 0);
+      });
+    };
+    return child;
+  };
+  syncBuiltinESMExports();
+  try {
+    await withInMemoryServer(async () => {
+      await generate(data, join(dir, 'answer.json'), { ...env, PATH: '/fixture/bin',
+        SWU_KODY_FLEET_BUDGET_ENABLED: 'true', FLEET_BUDGET_URL: 'https://usage.jays.services/api/ingest/fleet-budget',
+        FLEET_BUDGET_TOKEN: 'synthetic-budget-token-for-offline-tests-only',
+        DEEPSEEK_API_KEY: 'fixture-provider-secret', GH_TOKEN: 'fixture-github-secret',
+        ANTHROPIC_API_KEY: 'fixture-inherited-secret' }, reservationFor(data), scanReceipt(data),
+      async () => assert.fail('Synthetic child must not call a provider.'));
+    });
+    assert.deepEqual(JSON.parse(await readFile(join(dir, 'answer.json'), 'utf8')), edits);
+    assert.equal(launched.length, 1); const child = launched[0];
+    assert.equal(child.command, 'claude'); assert.deepEqual(child.args, claudeArguments());
+    assert.deepEqual(child.prompt, { findings: data.findings, files: data.files.map(({ path, content }) => ({ path, content })) });
+    assert.equal(child.options.env.ANTHROPIC_API_KEY, 'pilot-proxy');
+    assert.equal(child.options.env.FLEET_BUDGET_TOKEN, undefined); assert.equal(child.options.env.MINIMAX_API_KEY, undefined);
+    assert.equal(child.options.env.GH_TOKEN, undefined); assert.equal(child.options.env.DEEPSEEK_API_KEY, undefined);
+    assert.equal(child.options.env.HOME, child.options.cwd);
+    assert(child.options.env.ANTHROPIC_BASE_URL.startsWith('http://127.0.0.1:'));
+    await assert.rejects(access(child.options.cwd));
+  } finally { childProcess.spawn = originalSpawn; syncBuiltinESMExports(); await rm(dir, { recursive: true, force: true }); }
 });
 test('source push after branch creation prevents PR publication and never force-updates the branch', async () => {
   const f = fixture(), data = await snapshot(f.request, input), reservation = f.seedReservation(data);
