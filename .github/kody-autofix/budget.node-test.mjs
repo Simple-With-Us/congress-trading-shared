@@ -86,6 +86,11 @@ test('only the trusted structured-output tool schema is allowed', () => {
   assert.equal(boundedMessage(input, outputSchema).tools[0].cache_control, undefined);
   assert.throws(() => boundedMessage({ ...input, tools: [{ name: 'StructuredOutput', input_schema: {} }] }, outputSchema));
 });
+test('pinned CLI context-management hints are discarded, never forwarded upstream', () => {
+  const normalized = boundedMessage({ ...body(), context_management: { edits: [{ type: 'clear_thinking_20251015', keep: 'all' }] } }, outputSchema);
+  assert.equal(normalized.context_management, undefined);
+  assert.equal(normalized.max_tokens, 4096);
+});
 test('lost reserve and reconciliation replies replay the same identity without a second provider call', async () => {
   for (const lost of ['reserve', 'reconcile']) {
     const f = fixture(); f.settings.lose = lost;

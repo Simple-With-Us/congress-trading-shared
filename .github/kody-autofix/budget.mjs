@@ -52,7 +52,7 @@ function content(value, role) {
 /** Rebuild the request; reject server tools, media, extensions and paid tiers. */
 export function boundedMessage(body, outputSchema) {
   keys(body, ['model', 'messages', 'system', 'max_tokens', 'stream', 'tools', 'tool_choice',
-    'thinking', 'temperature', 'top_p', 'metadata', 'output_config', 'service_tier']);
+    'thinking', 'temperature', 'top_p', 'metadata', 'output_config', 'service_tier', 'context_management']);
   assert.equal(body.model, 'deepseek-flash', 'Unexpected CLI model.');
   assert(body.service_tier === undefined || body.service_tier === 'standard', 'Unsupported tier.');
   assert(body.stream === undefined || typeof body.stream === 'boolean');
@@ -84,7 +84,9 @@ export function boundedMessage(body, outputSchema) {
     result.tool_choice = { ...body.tool_choice, disable_parallel_tool_use: true };
   }
   // Both allowed providers count all thinking in max_tokens.  Their defaults
-  // retain thinking; client-specific budget/effort/cache hints are not copied.
+  // retain thinking; client-specific budget/effort/cache/context-management
+  // hints are not copied.  The pinned CLI emits context_management even with
+  // tools disabled; discarding it cannot expand provider capabilities.
   assert(Buffer.byteLength(JSON.stringify(result)) <= BUDGET_LIMITS.requestBytes);
   return result;
 }
