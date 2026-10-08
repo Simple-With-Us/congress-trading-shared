@@ -45,7 +45,7 @@
     "publint": "^0.3.25",
     "tsup": "^8.3.5",
     "typescript": "^7.0.2",
-    "typescript-v5": "npm:typescript@6.0.3",
+    "typescript-v5": "npm:typescript@7.0.2",
     "vitest": "^5.0.3"
   },
   "overrides": {
