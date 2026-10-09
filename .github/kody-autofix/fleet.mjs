@@ -6,6 +6,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { sourcePath, parseProfile, assertSafeText } from './profiles.mjs';
 export { sourcePath } from './profiles.mjs';
 import { createServer } from 'node:http';
+import { createBudgetedProvider } from './budget.mjs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -280,7 +281,7 @@ export function applyEdits(snapshot, answer) {
 }
 // A request limiter independently bounds retries and rejects every other route.
 // Only this trusted process sees the provider key; the tool-less CLI gets a dummy token.
-export async function startProxy(key, fetcher = fetch, report = console.error, beforeRequest = () => {}) {
+export async function startProxy(gateway, beforeRequest = () => {}) {
   let requests = 0;
   let blockedStatus = null;
   const server = createServer(async (req, res) => {
@@ -295,26 +296,14 @@ export async function startProxy(key, fetcher = fetch, report = console.error, b
       }
       const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       if (body.model !== MODEL || ++requests > LIMITS.requests) return reject(429);
-      body.max_tokens = Math.min(Number(body.max_tokens) || LIMITS.outputTokens, LIMITS.outputTokens);
-      if (body.thinking?.budget_tokens >= body.max_tokens) body.thinking.budget_tokens = 1024;
       beforeRequest();
-      const upstream = await fetcher('https://api.deepseek.com/anthropic/v1/messages', {
-        method: 'POST', redirect: 'error', signal: AbortSignal.timeout(90_000),
-        headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01', 'x-api-key': key },
-        body: JSON.stringify(body),
-      });
-      if (!upstream.ok) {
-        if ([401, 402, 403, 429].includes(upstream.status)) {
-          blockedStatus = upstream.status;
-          report(JSON.stringify({event: 'kody_pilot.provider_rejected', keyRef: 'KODY_DEEPSEEK_API_KEY', status: blockedStatus}));
-          return reject(blockedStatus);
-        }
-        return reject(502);
-      }
+      assert(gateway && typeof gateway.request === 'function', 'Budget gateway required.');
+      const upstream = await gateway.request(body);
+      assert(upstream.ok, 'Budgeted provider request failed.');
       res.writeHead(200, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' });
       for await (const chunk of upstream.body) res.write(chunk);
       res.end();
-    } catch { if (!res.headersSent) reject(502); else res.end(); }
+    } catch { blockedStatus = 502; if (!res.headersSent) reject(502); else res.end(); }
   });
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -334,11 +323,12 @@ export function claudeArguments() {
 export async function generate(snapshot, outputPath, env, reservation, scanReceipt, fetcher = fetch) {
   validateReservation(reservation,snapshot,env);
   validateScan(scanReceipt,snapshot);
-  assert(env.DEEPSEEK_API_KEY, 'DEEPSEEK_API_KEY is missing; activation is incomplete.');
+  const validateApproval = () => { validateReservation(reservation,snapshot,env); validateScan(scanReceipt,snapshot); };
+  const gateway = createBudgetedProvider(env, `${env.GITHUB_RUN_ID}:${reservation.snapshotDigest}`, schema, fetcher, validateApproval);
   const home = await mkdtemp(join(tmpdir(), 'kody-pilot-'));
   let proxy;
   try {
-    proxy = await startProxy(env.DEEPSEEK_API_KEY, fetcher, console.error, () => { validateReservation(reservation,snapshot,env); validateScan(scanReceipt,snapshot); });
+    proxy = await startProxy(gateway, validateApproval);
     const result = await new Promise((resolve, reject) => {
       const child = spawn('claude', claudeArguments(), { cwd: home, env: {
         PATH: env.PATH, HOME: home, TMPDIR: home, CI: 'true',

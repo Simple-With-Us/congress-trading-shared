@@ -581,54 +581,49 @@ async function withInMemoryServer(callback) {
   try { await callback(request); }
   finally { http.createServer = original; syncBuiltinESMExports(); }
 }
-test('in-memory proxy pins provider/model, rejects unrelated routes, and hard-caps requests and output tokens', async () => {
+test('in-memory proxy rejects unrelated routes and hard-caps request count before the budget gateway', async () => {
   await withInMemoryServer(async request => {
     const calls = [];
-    const proxy = await startProxy('fixture-only', async (url, options) => {
-      calls.push({ url, options }); return new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } });
-    });
+    const proxy = await startProxy({ request: async body => {
+      calls.push(body); return new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } });
+    } });
     try {
       assert.equal((await request({}, { path: '/evil' })).status, 400);
       assert.equal((await request({}, { method: 'GET' })).status, 400);
       assert.equal((await request({ model: 'other' })).status, 429);
-      assert.equal((await request({}, { raw: 'invalid-json' })).status, 502);
       assert.equal((await request({}, { raw: 'x'.repeat(LIMITS.requestBytes + 1) })).status, 413);
-      for (let n = 0; n < LIMITS.requests; n++) assert.equal((await request({ model: MODEL, max_tokens: 100_000 })).status, 200);
+      for (let n = 0; n < LIMITS.requests; n++) assert.equal((await request({ model: MODEL })).status, 200);
       assert.equal((await request({ model: MODEL })).status, 429);
       assert.equal(calls.length, LIMITS.requests);
-      for (const call of calls) {
-        assert.equal(call.url, 'https://api.deepseek.com/anthropic/v1/messages');
-        assert.equal(call.options.redirect, 'error'); assert.equal(call.options.headers['x-api-key'], 'fixture-only');
-        assert.equal(JSON.parse(call.options.body).max_tokens, LIMITS.outputTokens);
-      }
+      assert.equal((await request({}, { raw: 'invalid-json' })).status, 502);
     } finally { await proxy.close(); }
   });
 });
-test('credential, payment, permission, and quota refusals lock the in-memory proxy without raw error disclosure', async () => {
-  for (const status of [401, 402, 403, 429]) {
+test('missing gateway and ambiguous budget/provider failures lock the proxy without raw error disclosure', async () => {
+  for (const gateway of [null, { request: async () => { throw new Error('sensitive upstream error'); } }]) {
     await withInMemoryServer(async request => {
-      let calls = 0; const reports = [];
-      const proxy = await startProxy('fixture-provider-secret', async () => {
-        calls++; return new Response('sensitive upstream error', { status });
-      }, report => reports.push(report));
+      const proxy = await startProxy(gateway);
       try {
-        assert.equal((await request({ model: MODEL })).status, status);
-        assert.equal((await request({ model: MODEL })).status, status);
-        assert.equal(calls, 1); assert.equal(reports.length, 1);
-        assert.equal(JSON.parse(reports[0]).status, status);
-        assert(!reports[0].includes('fixture-provider-secret')); assert(!reports[0].includes('sensitive upstream error'));
+        const first = await request({ model: MODEL });
+        assert.equal(first.status, 502); assert(!first.body.includes('sensitive'));
+        assert.equal((await request({ model: MODEL })).status, 502);
       } finally { await proxy.close(); }
     });
   }
 });
-test('expired or revoked approval at proxy request time prevents even a mocked provider call', async () => {
+test('expired or revoked approval at proxy request time prevents even a mocked gateway call', async () => {
   await withInMemoryServer(async request => {
     let calls = 0;
-    const proxy = await startProxy('fixture-only', async () => { calls++; return new Response('{}'); },
-      () => {}, () => { throw new Error('Approval expired.'); });
+    const proxy = await startProxy({ request: async () => { calls++; return new Response('{}'); } },
+      () => { throw new Error('Approval expired.'); });
     try { assert.equal((await request({ model: MODEL })).status, 502); assert.equal(calls, 0); }
     finally { await proxy.close(); }
   });
+});
+test('generation remains disabled before CLI launch even with otherwise valid local receipts', async () => {
+  const data = packageData();
+  await assert.rejects(generate(data, '/tmp/not-written-disabled-budget.json', { ...env, DEEPSEEK_API_KEY: 'fixture-only' },
+    reservationFor(data), scanReceipt(data), async () => assert.fail('No network allowed.')), /gateway is disabled/);
 });
 test('generation uses only approved source and a credential-free CLI environment with fake processes', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'fleet-offline-generate-'));
@@ -652,6 +647,8 @@ test('generation uses only approved source and a credential-free CLI environment
   try {
     await withInMemoryServer(async () => {
       await generate(data, join(dir, 'answer.json'), { ...env, PATH: '/fixture/bin',
+        SWU_KODY_FLEET_BUDGET_ENABLED: 'true', FLEET_BUDGET_URL: 'https://usage.jays.services/api/ingest/fleet-budget',
+        FLEET_BUDGET_TOKEN: 'synthetic-budget-token-for-offline-tests-only',
         DEEPSEEK_API_KEY: 'fixture-provider-secret', GH_TOKEN: 'fixture-github-secret',
         ANTHROPIC_API_KEY: 'fixture-inherited-secret' }, reservationFor(data), scanReceipt(data),
       async () => assert.fail('Synthetic child must not call a provider.'));
@@ -661,6 +658,7 @@ test('generation uses only approved source and a credential-free CLI environment
     assert.equal(child.command, 'claude'); assert.deepEqual(child.args, claudeArguments());
     assert.deepEqual(child.prompt, { findings: data.findings, files: data.files.map(({ path, content }) => ({ path, content })) });
     assert.equal(child.options.env.ANTHROPIC_API_KEY, 'pilot-proxy');
+    assert.equal(child.options.env.FLEET_BUDGET_TOKEN, undefined); assert.equal(child.options.env.MINIMAX_API_KEY, undefined);
     assert.equal(child.options.env.GH_TOKEN, undefined); assert.equal(child.options.env.DEEPSEEK_API_KEY, undefined);
     assert.equal(child.options.env.HOME, child.options.cwd);
     assert(child.options.env.ANTHROPIC_BASE_URL.startsWith('http://127.0.0.1:'));
