@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
+import { sourcePrefixesSchema } from './github-schemas.mjs';
 
 const extensions = Object.freeze({ web: ['ts','tsx','js','mjs','css'], swift: ['swift'], python: ['py'], static: ['html','css','js','mjs'], blocked: [] });
 export function parseProfile(name, raw) {
   assert(Object.hasOwn(extensions,name), 'Unsupported profile.');
-  const prefixes=JSON.parse(raw);
-  assert(Array.isArray(prefixes) && prefixes.length<=8, 'Invalid source scope.');
-  for(const path of prefixes) assert(typeof path==='string' && /^[A-Za-z0-9_-][A-Za-z0-9_./-]*$/.test(path)
-    && path.split('/').filter(Boolean).every(part=>!part.startsWith('.')) && !path.includes('//'), 'Invalid source scope.');
+  const prefixes=sourcePrefixesSchema.parse(JSON.parse(raw));
   assert(name==='blocked' || prefixes.length>0, 'No approved source scope.');
   return {profile:name,prefixes};
 }

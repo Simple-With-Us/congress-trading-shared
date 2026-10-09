@@ -9,6 +9,21 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import {
+  blobSchema,
+  checkRunSchema,
+  commitSchema,
+  gitCommitCreateSchema,
+  gitRefCreateSchema,
+  gitRefSchema,
+  gitTreeCreateSchema,
+  githubEnvelopeSchema,
+  graphqlBodySchema,
+  pullCreateSchema,
+  pullSchema,
+  repositorySchema,
+  treeSchema,
+} from './github-schemas.mjs';
 
 export const LIMITS = Object.freeze({ files: 5, findings: 8, fileBytes: 64_000, contextBytes: 180_000,
   edits: 12, replacementBytes: 24_000, outputBytes: 180_000, requests: 3, requestBytes: 256_000,
@@ -102,6 +117,22 @@ export async function collectThreads(graphql, owner, repo, number) {
   }
   fail('Review pagination exceeded the safety bound; nothing was sent to the model.');
 }
+function responseSchema(path, method) {
+  if (path === '/graphql') return graphqlBodySchema;
+  if (path === '') return repositorySchema;
+  if (path.startsWith('check-runs/')) return checkRunSchema;
+  if (path.startsWith('pulls/') && method === 'GET') return pullSchema;
+  if (path === 'pulls' && method === 'POST') return pullCreateSchema;
+  if (path.startsWith('git/commits/') && method === 'GET') return commitSchema;
+  if (path.startsWith('git/trees/') && method === 'GET') return treeSchema;
+  if (path === 'git/trees' && method === 'POST') return gitTreeCreateSchema;
+  if (path.startsWith('git/blobs/')) return blobSchema;
+  if (path.startsWith('git/ref/') && method === 'GET') return gitRefSchema;
+  if (path === 'git/refs' && method === 'POST') return gitRefCreateSchema;
+  if (path === 'git/commits' && method === 'POST') return gitCommitCreateSchema;
+  fail('Unexpected API path.');
+}
+
 export function api(token, repository, fetcher = fetch) {
   assert.match(repository, /^Simple-With-Us\/[A-Za-z0-9_.-]+$/);
   return async (path, method = 'GET', body) => {
@@ -111,7 +142,10 @@ export function api(token, repository, fetcher = fetch) {
       Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},
       body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30_000)});
     if(!response.ok){const error=new Error('GitHub request refused.');error.status=response.status;throw error;}
-    const data=await response.json();assert(!data.errors,'Incomplete GitHub response.');return data;
+    const raw=await response.json();
+    githubEnvelopeSchema.parse(raw);
+    assert(!raw.errors,'Incomplete GitHub response.');
+    return responseSchema(path, method).parse(raw);
   };
 }
 export const fixBranch = (input) => `swu/kody-fix-pr-${input.number}-${input.head}`;

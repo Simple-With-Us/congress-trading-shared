@@ -228,7 +228,11 @@ test('malformed, repeated, missing, and overlong pagination fail closed', async 
 test('GitHub API wrapper uses exact repo-relative endpoints, errors, and redirect refusal', async () => {
   const calls = [];
   const request = api('fixture-token', repository, async (url, options) => {
-    calls.push({ url, options }); return new Response('{"ok":true}');
+    calls.push({ url, options });
+    if (url === 'https://api.github.com/graphql') return new Response(JSON.stringify({ data: { ok: true } }));
+    if (url === `https://api.github.com/repos/${repository}`) return new Response(JSON.stringify(repositoryData()));
+    if (url === `https://api.github.com/repos/${repository}/pulls/123`) return new Response(JSON.stringify(pull()));
+    return new Response('{}');
   });
   await request(''); await request('pulls/123'); await request('/graphql', 'POST', { query: 'fixture' });
   assert.deepEqual(calls.map(c => c.url), [`https://api.github.com/repos/${repository}`, `https://api.github.com/repos/${repository}/pulls/123`, 'https://api.github.com/graphql']);
