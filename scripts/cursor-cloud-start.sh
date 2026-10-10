@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cursor cloud agent start for congress-trading-shared.
 # Runs every agent boot (Cursor dashboard "start" hook).  Exports Infisical
-# secrets for the dev env into a private env file under
+# secrets for the prod env into a private env file under
 # $HOME/.cursor-cloud-env/<repo>.env (mode 0600) plus a tiny source.sh helper.
 #
 # Install disk state persists across agent starts, but exported shell vars do
@@ -27,6 +27,16 @@ if [ -f .cursor/infisical.env ]; then
 else
   echo "==> .cursor/infisical.env missing; cannot fetch Infisical secrets."
   echo "    Add INFISICAL_PROJECT_ID + INFISICAL_ENV + INFISICAL_DOMAIN to .cursor/infisical.env and retry."
+  exit 0
+fi
+
+# ---- Prod-only guard (owner 2026-10-10: dev and staging environments retired) ----
+# prod is the only Infisical environment.  Refuse to fetch from any other value
+# so a stale .cursor/infisical.env cannot read a retired (or empty) environment.
+# Exit 0 like the other short-circuits so the agent still comes up.
+if [ "${INFISICAL_ENV:-}" != "prod" ]; then
+  echo "==> ERROR: INFISICAL_ENV is '${INFISICAL_ENV:-}', expected 'prod'.  Dev and staging are retired; refusing to fetch Infisical secrets." >&2
+  echo "    Set INFISICAL_ENV=prod in .cursor/infisical.env and retry." >&2
   exit 0
 fi
 
