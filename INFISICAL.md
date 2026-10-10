@@ -24,7 +24,7 @@ The settings/secrets surface (UI pages, API routes, CLI commands) is restricted 
 
 ## Key inventory for THIS repo
 
-**None — intentionally empty.**  The `congress-trading-shared` Infisical project (`6a953a29-8397-4a9d-a5a5-7d1b61e4a5e7`, envs dev/staging/prod) holds zero keys today and is expected to stay near-empty: this library has no runtime behavior of its own, so it has nothing to configure.  What this repo ships is the **shared client module** (`src/infisicalSettings.ts`) that consuming apps point at *their own* Infisical projects.  If a key ever needs to live here (e.g. a fleet-wide default knob), it will be inventoried in this section first.
+**None — intentionally empty.**  The `congress-trading-shared` Infisical project (`6a953a29-8397-4a9d-a5a5-7d1b61e4a5e7`, environment prod; dev and staging retired 2026-10-10) holds zero keys today and is expected to stay near-empty: this library has no runtime behavior of its own, so it has nothing to configure.  What this repo ships is the **shared client module** (`src/infisicalSettings.ts`) that consuming apps point at *their own* Infisical projects.  If a key ever needs to live here (e.g. a fleet-wide default knob), it will be inventoried in this section first.
 
 ## Consuming the client (for fleet apps)
 
@@ -33,7 +33,7 @@ import { createInfisicalSettings } from "@jaywedgeworth22/congress-trading-share
 
 const settings = createInfisicalSettings({
   projectId: "<this app's Infisical project ID>",
-  environment: process.env.APP_ENV ?? "dev",  // dev | staging | prod
+  environment: "prod",                        // prod is the only fleet environment (dev and staging retired 2026-10-10)
   refreshIntervalMs: 5 * 60 * 1000,           // default; tunable
 });
 
