@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `.github/workflows/codex-autofix-reusable.yml` no longer uses the org secret `GH_PAT` (owner 2026-10-11).  GitHub rejected the stored token, so checkout failed with `could not read Username for 'https://github.com'`.  Checkout and claude-code-action now use the built-in `GITHUB_TOKEN`.  `GH_PAT` stays declared as an optional, ignored `workflow_call` secret so callers that still pass it do not error;  the caller template and the local caller no longer pass it.  Accepted cost:  pushes made with `GITHUB_TOKEN` do not re-trigger CI or reviewers, so re-push before arming auto-merge.  Callers need `contents: write` and `pull-requests: write`.  claude-code-action (`ed670b4`) needs nothing else when `github_token` is passed:  no OIDC `id-token: write`, and `use_commit_signing` defaults to false.
+
 ### Changed
 - `.github/workflows/codex-autofix-reusable.yml` (display name "Claude Code Autofix (Reusable)") now routes claude-code-action to MiniMax (`https://api.minimax.io/anthropic`, org secret `MINIMAX_API_KEY`) instead of DeepSeek, adds a `model` input (default `MiniMax-M3.1-Flash-Preview`), and acts on Codex, Kody and Cursor reviews by default.  Callers must pass `MINIMAX_API_KEY` and use the shared `pr-autofix-${{ github.repository }}-<PR>` concurrency group (see the workflow header).
 

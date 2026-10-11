@@ -13,9 +13,14 @@ name: Claude Code Autofix (Reusable)
 # To onboard a new repo:
 #   1. No per-repo model key is needed:  MINIMAX_API_KEY is an organization secret
 #      visible to every repo.  The caller only has to pass it through
-#      (`secrets: MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}`).  GH_PAT is
-#      optional and, when the repo has it, should be passed through the same way
-#      so the fixer's pushes re-trigger CI and the reviewers.
+#      (`secrets: MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}`).  Do not pass
+#      GH_PAT:  the workflow ignores it and uses the built-in GITHUB_TOKEN for
+#      checkout, the push, and claude-code-action (owner 2026-10-11).  The org
+#      GH_PAT was rejected by GitHub, which broke checkout, and nothing in the fleet
+#      should act as the owner's account.  Consequence:  a push made with
+#      GITHUB_TOKEN does not trigger other workflows, so CI and the reviewers do not
+#      re-run on an autofix commit.  Re-push (an empty commit is enough) to
+#      re-trigger them before arming auto-merge.
 #   2. Create .github/workflows/claude-autofix.yml (or keep an existing
 #      codex-autofix.yml) from the caller template below.
 #   3. Caller workflows must trigger on `pull_request_review` with
@@ -46,7 +51,7 @@ name: Claude Code Autofix (Reusable)
 #         pr:
 #           description: "PR number to run the autofix loop on"
 #           required: true
-#   permissions:
+#   permissions:          # GITHUB_TOKEN needs both, the reusable cannot raise them
 #     contents: write
 #     pull-requests: write
 #   concurrency:
@@ -62,7 +67,6 @@ name: Claude Code Autofix (Reusable)
 #       uses: Simple-With-Us/congress-trading-shared/.github/workflows/codex-autofix-reusable.yml@<merge sha>
 #       secrets:
 #         MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-#         GH_PAT: ${{ secrets.GH_PAT }}
 #       with:
 #         prompt: |
 #           <repo-specific fixer policy>
@@ -101,6 +105,7 @@ on:
         required: true
       GH_PAT:
         required: false
+        description: "Ignored (owner 2026-10-11).  Kept declared only so callers that still pass it do not fail;  the workflow uses the built-in GITHUB_TOKEN."
 
 permissions:
   contents: write
@@ -121,7 +126,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-          token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         # Routed to MiniMax via its Anthropic-compatible endpoint:  claude-code-action
@@ -137,7 +142,7 @@ jobs:
           ANTHROPIC_SMALL_FAST_MODEL: ${{ inputs.model }}
         with:
           anthropic_api_key: ${{ secrets.MINIMAX_API_KEY }}
-          github_token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           allowed_bots: ${{ inputs.allowed_bots }}
           prompt: ${{ inputs.prompt }}
           claude_args: ${{ inputs.claude_args }}
