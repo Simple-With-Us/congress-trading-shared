@@ -62,7 +62,9 @@ A successful offline test run does not establish that protected environments, se
 
 ## Operational Limits
 
-Daily attempt allocations and activation settings remain unapproved in this draft.  No caller is deployed, no protected environment or credential was configured, and no provider request was made.  The CLI dollar estimate is not a verified provider spending cap.  Aggregate organization spending requires approved allocations and a separately verified budget mechanism before enabling any repository.
+The owner approved activation fleet wide on 2026-10-11 (boards 04b963b7 and 99e559ea): every active repository gets a caller with `daily_attempt_limit: 5` and `budget_policy_id: approved-owner-2026-10-11`, a `kody-autofix` environment limited to the `main` deployment branch, and the organization variable `SWU_KODY_AUTOFIX_ENABLED`.  The environment branch policy is a branch gate, not a human-approval gate.  The provider key is still an environment secret in each calling repository, set by the owner.
+
+The helper pin must point at a commit on `main` that contains `package.json` and `package-lock.json`, because every job runs `npm ci` in the helper directory.  The first pin was a pre-squash branch commit without them, so `npm ci` would have failed before any work.  The CLI dollar estimate is not a verified provider spending cap.  Aggregate organization spending requires approved allocations and a separately verified budget mechanism before enabling any repository.
 
 Source-name filters and secret scanners are defensive checks, not proof that arbitrary business logic contains no sensitive data.  Review exact repository scopes before activation.  Existing same-branch auto-fixers must be retired or kept excluded from activation to prevent competing writers.  New proposals remain draft and unverified; review-thread resolution is always left to a person.
 
