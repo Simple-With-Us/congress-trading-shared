@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `.github/workflows/codex-autofix-reusable.yml` (display name "Claude Code Autofix (Reusable)") now routes claude-code-action to MiniMax (`https://api.minimax.io/anthropic`, org secret `MINIMAX_API_KEY`) instead of DeepSeek, adds a `model` input (default `MiniMax-M3.1-Flash-Preview`), and acts on Codex, Kody and Cursor reviews by default.  Callers must pass `MINIMAX_API_KEY` and use the shared `pr-autofix-${{ github.repository }}-<PR>` concurrency group (see the workflow header).
+
 ## [2.7.0] — 2026-09-15
 
 ### Added
