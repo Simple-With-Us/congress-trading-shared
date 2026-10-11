@@ -1,4 +1,8 @@
 # congress-trading-shared Effort Log — cross-agent board
+
+> **ARCHIVED Sun, Oct 11, 2026.**  Linear is the system of record: team CTS, https://linear.app/simple-with-us/team/CTS.
+> This file is read-only history.  Do not edit it or add rows.  See EFFORT-LOG-PROTOCOL.md.
+
 Protocol: /Users/jay/apps/EFFORT-LOG-PROTOCOL.md (canonical). Live board: this file
 (mirror: docs/EFFORT-LOG.md in the repo). As of 2026-08-20.
 
