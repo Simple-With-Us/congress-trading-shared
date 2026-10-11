@@ -5,6 +5,12 @@
   "minimumReleaseAge": "5 days",
   "packageRules": [
     {
+      "description": "Hold the typescript-v5 alias (npm:typescript) below 7.  tsup --dts relies on the classic TypeScript compiler API, which TypeScript 7 removed.",
+      "matchPackageNames": ["typescript", "typescript-v5"],
+      "matchDepNames": ["typescript-v5"],
+      "allowedVersions": "<7"
+    },
+    {
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
       "groupName": "non-major dependencies",
       "automerge": true,
