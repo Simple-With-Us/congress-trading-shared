@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { generateCaller, parseArguments, validateOptions, yamlString, PROFILES } from './generate-caller.mjs';
+import { generateCaller, parseArguments, validateOptions, yamlString, PROFILES,
+  DEFAULT_MODEL, DEFAULT_MODEL_BASE_URL, MODEL_BASE_URLS, MODEL_PATTERN } from './generate-caller.mjs';
+import * as fleet from './fleet.mjs';
 
 const valid = (overrides = {}) => ({'repository-id': '123456789', profile: 'web',
   'source-prefixes': '["src/","server/"]', 'shared-sha': 'a'.repeat(40), ...overrides});
@@ -31,7 +33,13 @@ test('offline caller defaults to no paid attempts and no implicit enablement', (
   assert.match(caller, /budget_policy_id: 'pending'\n/);
   assert.match(caller, /repository_id: '123456789'\n/);
   assert.match(caller, /source_prefixes: '\["src\/","server\/"\]'\n/);
-  assert(!caller.includes('secrets:'));
+  // The provider key is forwarded explicitly and only once; secrets are never inherited.
+  assert(caller.endsWith("    secrets:\n      MODEL_API_KEY: ${{ secrets.VERCEL_AI_GATEWAY_API_KEY }}\n"));
+  assert.equal((caller.match(/secrets\./g) ?? []).length, 1);
+  assert(!caller.includes('secrets: inherit'));
+  assert.match(caller, /^name: Kody Muse Spark Fix Proposals$/m);
+  assert.match(caller, /model: 'meta\/muse-spark-1\.3-contributor'\n/);
+  assert.match(caller, /model_base_url: 'https:\/\/ai-gateway\.vercel\.sh\/v1'\n/);
   assert(!caller.includes('workflow_dispatch'));
   assert(!caller.includes('pull_request_review:'));
   assert(!caller.includes('issue_comment:'));
@@ -138,13 +146,10 @@ test('all dependency actions and shared helper checkouts use immutable pinned ve
     assert.match(job(name), /sparse-checkout: \.github\/kody-autofix/);
     assert(!job(name).includes('ref: ${{ github.sha }}'));
   }
-  const install = job('generate').split('      - name: Install Pinned Claude Code\n')[1]?.split('      - name:')[0];
-  assert(install, 'Pinned Claude Code installation step is required.');
-  assert.match(install, /run: npm install --global @anthropic-ai\/claude-code@2\.1\.289\n/);
-  assert(!install.includes('--ignore-scripts'), 'The pinned native CLI requires its official installation script.');
-  assert(!install.includes('env:'), 'The CLI installation step must not receive secret environment variables.');
-  assert(!install.includes('secrets.'));
-  assert(!install.includes('DEEPSEEK_API_KEY'));
+  // The key-bearing job installs nothing global and runs no third-party CLI or install scripts.
+  assert(!job('generate').includes('npm install'));
+  assert(!job('generate').includes('claude-code'));
+  assert(!yaml.includes('DEEPSEEK'));
 });
 
 test('split-privilege jobs never expose write credentials in generation', () => {
@@ -165,7 +170,10 @@ test('split-privilege jobs never expose write credentials in generation', () => 
   assert.equal((yaml.match(/GH_TOKEN:/g) ?? []).length, 3);
   assert.equal((yaml.match(/secrets\./g) ?? []).length, 1);
   assert.match(job('generate'), /environment: kody-autofix/);
-  assert.match(job('generate'), /DEEPSEEK_API_KEY: \$\{\{ secrets\.KODY_DEEPSEEK_API_KEY \}\}/);
+  assert.match(job('generate'), /MODEL_API_KEY: \$\{\{ secrets\.MODEL_API_KEY \}\}/);
+  assert.match(job('generate'), /KODY_MODEL: \$\{\{ inputs\.model \}\}/);
+  assert.match(job('generate'), /KODY_MODEL_BASE_URL: \$\{\{ inputs\.model_base_url \}\}/);
+  assert.match(yaml, /    secrets:\n      MODEL_API_KEY:\n        description: [^\n]+\n        required: false\n/);
   assert(!yaml.includes('secrets: inherit'));
   assert(!yaml.includes('GH_PAT'));
   assert(!yaml.includes('token: ${{ secrets.'));
@@ -178,7 +186,7 @@ test('verified fixed scanner runs before the sole provider-key step', () => {
   assert.match(generation, /sha256sum --check --strict/);
   assert(generation.indexOf('sha256sum --check --strict') < generation.indexOf('tar --extract'));
   assert(generation.indexOf('fleet.mjs scan ') < generation.indexOf('fleet.mjs generate '));
-  assert(generation.indexOf('fleet.mjs scan ') < generation.indexOf('secrets.KODY_DEEPSEEK_API_KEY'));
+  assert(generation.indexOf('fleet.mjs scan ') < generation.indexOf('secrets.MODEL_API_KEY'));
   assert(generation.indexOf('fleet.mjs generate ') < generation.indexOf('fleet.mjs scan-answer '));
   const answerScan = generation.split('      - name: Reject Secret-Bearing Generated Results\n')[1].split('      - uses:')[0];
   assert(!answerScan.includes('secrets.'));
@@ -230,4 +238,20 @@ test('dedicated hosted validation runs only read-only offline tests on narrow pa
   assert(!validation.includes('npm install'));
   assert(!validation.includes('fleet.mjs generate'));
   for (const match of validation.matchAll(/uses: ([^\s]+)@([^\s]+)/g)) assert.match(match[2], /^[a-f0-9]{40}$/);
+});
+
+test('provider model and endpoint options are validated and match the helper allowlist', () => {
+  assert.equal(DEFAULT_MODEL, fleet.MODEL);
+  assert.equal(DEFAULT_MODEL_BASE_URL, fleet.DEFAULT_MODEL_BASE_URL);
+  assert.deepEqual([...MODEL_BASE_URLS], [...fleet.MODEL_BASE_URLS]);
+  assert.equal(String(MODEL_PATTERN), String(fleet.MODEL_PATTERN));
+  assert.match(yaml, /      model:\n[\s\S]*?default: meta\/muse-spark-1\.3-contributor\n/);
+  assert.match(yaml, /      model_base_url:\n[\s\S]*?default: https:\/\/ai-gateway\.vercel\.sh\/v1\n/);
+  const native = generateCaller(valid({ model: 'muse-spark-1.3-contributor', 'model-base-url': 'https://api.meta.ai/v1' }));
+  assert.match(native, /model: 'muse-spark-1\.3-contributor'\n      model_base_url: 'https:\/\/api\.meta\.ai\/v1'\n/);
+  assert.match(generateCaller(valid({ model: 'meta/muse-spark-1.3' })), /model: 'meta\/muse-spark-1\.3'\n/);
+  for (const model of ['', 'META/X', '../x', 'a/b/c', "x'y", '${{ secrets.KEY }}', 'x\nsecrets: inherit'])
+    assert.throws(() => validateOptions(valid({ model })), /Model/);
+  for (const url of ['', 'https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/'])
+    assert.throws(() => validateOptions(valid({ 'model-base-url': url })), /base URL/);
 });

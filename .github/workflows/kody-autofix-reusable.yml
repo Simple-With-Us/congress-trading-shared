@@ -1,7 +1,12 @@
-name: Kody DeepSeek Fix Proposals (Reusable)
+name: Kody Muse Spark Fix Proposals (Reusable)
 
 # Separate from the legacy Codex autofix workflow.  No secrets are inherited.
 # The trusted helper is independently pinned to its immutable publication commit.
+# Provider: Meta Muse Spark via Vercel AI Gateway chat completions (owner 2026-10-11).
+# Callers forward MODEL_API_KEY explicitly, today from the org secret VERCEL_AI_GATEWAY_API_KEY.
+# Native Meta switch: add a Meta key as an org secret, forward it as MODEL_API_KEY, and set
+# model_base_url 'https://api.meta.ai/v1' with model 'muse-spark-1.3-contributor'.  That endpoint is
+# allowlisted in the helper but untested; Meta documents a Responses API, so verify chat completions first.
 on:
   workflow_call:
     inputs:
@@ -27,6 +32,20 @@ on:
         required: false
         type: string
         default: pending
+      model:
+        description: Provider model identifier; the helper rejects anything outside its strict pattern
+        required: false
+        type: string
+        default: meta/muse-spark-1.3-contributor
+      model_base_url:
+        description: OpenAI-compatible base URL; the helper accepts only its reviewed allowlist
+        required: false
+        type: string
+        default: https://ai-gateway.vercel.sh/v1
+    secrets:
+      MODEL_API_KEY:
+        description: Provider key for model_base_url, forwarded explicitly by the caller
+        required: false
 
 permissions: {}
 
@@ -193,13 +212,13 @@ jobs:
         run: node trusted-helper/.github/kody-autofix/fleet.mjs scan "$RUNNER_TEMP/kody-autofix"
         env:
           GITLEAKS_BIN: ${{ runner.temp }}/kody-tools/gitleaks
-      # Install outside target sources, without repository scripts or configuration.
-      - name: Install Pinned Claude Code
-        run: npm install --global @anthropic-ai/claude-code@2.1.289
+      # One bounded chat-completions request from the trusted helper; no CLI, tools, or proxy.
       - name: Generate One Bounded Proposal
         run: node trusted-helper/.github/kody-autofix/fleet.mjs generate "$RUNNER_TEMP/kody-autofix"
         env:
-          DEEPSEEK_API_KEY: ${{ secrets.KODY_DEEPSEEK_API_KEY }}
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+          KODY_MODEL: ${{ inputs.model }}
+          KODY_MODEL_BASE_URL: ${{ inputs.model_base_url }}
       - name: Reject Secret-Bearing Generated Results
         run: node trusted-helper/.github/kody-autofix/fleet.mjs scan-answer "$RUNNER_TEMP/kody-autofix"
         env:
