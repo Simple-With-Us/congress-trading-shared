@@ -27,7 +27,6 @@ jobs:
     uses: ./.github/workflows/codex-autofix-reusable.yml
     secrets:
       MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-      GH_PAT: ${{ secrets.GH_PAT }}
     with:
       prompt: |
         You are the fleet's autofix bot.  A review bot (Codex, Kody, or Cursor) just reviewed this pull request.
