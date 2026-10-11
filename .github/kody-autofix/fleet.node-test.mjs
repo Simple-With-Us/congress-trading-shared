@@ -4,11 +4,6 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, writeFile, rm, chmod, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import http from 'node:http';
-import childProcess from 'node:child_process';
-import { syncBuiltinESMExports } from 'node:module';
-import { Readable } from 'node:stream';
-import { EventEmitter } from 'node:events';
 import * as fleet from './fleet.mjs';
 import { parseProfile, assertSafeText } from './profiles.mjs';
 
@@ -18,7 +13,8 @@ globalThis.fetch = async () => assert.fail('Real network access is forbidden in 
 process.on('exit', () => { globalThis.fetch = originalFetch; });
 const { validateInput, validatePull, sourcePath, selectFindings, collectThreads, api,
   snapshot, budgetPolicy, reserve, validateReservation, validateScan, scanDirectory, applyEdits, generate, publish,
-  startProxy, claudeArguments, fixBranch, attemptRef, KODY, LIMITS, MODEL } = fleet;
+  providerFrom, chatRequest, requestEdits, SYSTEM_PROMPT, MODEL_BASE_URLS, schema,
+  fixBranch, attemptRef, KODY, LIMITS, MODEL } = fleet;
 const head = 'a'.repeat(40);
 const treeSha = 'b'.repeat(40);
 const blobSha = 'e'.repeat(40);
@@ -410,7 +406,7 @@ test('generation rejects missing, expired, or snapshot-mismatched reservation be
   const fetcher = async () => { calls++; assert.fail('Provider calls must be refused.'); };
   for (const reservation of [null, { result: 'budget_pending' }, reservationFor(data, Date.now() - 16 * 60_000),
     reservationFor(data, Date.now(), { snapshotDigest: 'wrong' })]) {
-    await assert.rejects(generate(data, '/tmp/not-written-fleet-answer.json', { ...env, DEEPSEEK_API_KEY: 'fixture-only' }, reservation, scanReceipt(data), fetcher));
+    await assert.rejects(generate(data, '/tmp/not-written-fleet-answer.json', { ...env, MODEL_API_KEY: 'fixture-only' }, reservation, scanReceipt(data), fetcher));
   }
   assert.equal(calls, 0);
 });
@@ -448,16 +444,28 @@ test('late concurrent source push prevents branch creation without force or roll
   await assert.rejects(publish(f.request, data, answer(), input, reservation, env, scanReceipt(data, answer())), /head moved/);
   assert.deepEqual(f.writes.map(w => w.path), ['git/trees', 'git/commits']);
 });
-test('CLI configuration removes tools, hooks, session state, and unrelated settings', () => {
-  const args = claudeArguments();
-  assert(args.includes('--bare')); assert.equal(args[args.indexOf('--tools') + 1], '');
-  assert.equal(args[args.indexOf('--setting-sources') + 1], '');
-  assert(args.includes('--strict-mcp-config')); assert(args.includes('--no-session-persistence'));
-  assert(args.includes('--no-chrome')); assert(!args.includes('--dangerously-skip-permissions'));
-  assert.equal(args[args.indexOf('--model') + 1], MODEL);
-  assert.equal(args[args.indexOf('--max-budget-usd') + 1], '0.50');
+test('provider configuration accepts only reviewed endpoints and strict model identifiers', () => {
+  assert.equal(MODEL, 'meta/muse-spark-1.3-contributor');
+  assert.deepEqual(providerFrom({}), { url: 'https://ai-gateway.vercel.sh/v1/chat/completions', model: MODEL });
+  assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://api.meta.ai/v1', KODY_MODEL: 'muse-spark-1.3-contributor' }),
+    { url: 'https://api.meta.ai/v1/chat/completions', model: 'muse-spark-1.3-contributor' });
+  assert.equal(providerFrom({ KODY_MODEL: 'meta/muse-spark-1.3' }).model, 'meta/muse-spark-1.3');
+  assert.deepEqual([...MODEL_BASE_URLS], ['https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1']);
+  for (const url of ['https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/',
+    'https://ai-gateway.vercel.sh.evil.example/v1', 'https://user@ai-gateway.vercel.sh/v1', 'https://api.deepseek.com/anthropic'])
+    assert.throws(() => providerFrom({ KODY_MODEL_BASE_URL: url }), /base URL/);
+  for (const model of ['META/X', '../x', 'a/b/c', 'x y', '${{ secrets.KEY }}', 'a'.repeat(70), '-x', 'meta/.x'])
+    assert.throws(() => providerFrom({ KODY_MODEL: model }), /model identifier/);
 });
-
+test('chat request is tool-free, bounded, schema-shaped, and carries only approved source', () => {
+  const data = packageData(); const body = chatRequest(MODEL, data);
+  assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'response_format', 'stream']);
+  assert.equal(body.max_tokens, LIMITS.outputTokens); assert.equal(body.stream, false);
+  assert.equal(body.tools, undefined); assert.equal(body.tool_choice, undefined);
+  assert.equal(body.messages[0].content, SYSTEM_PROMPT);
+  assert.deepEqual(JSON.parse(body.messages[1].content), { findings: data.findings, files: data.files.map(({ path, content }) => ({ path, content })) });
+  assert.deepEqual(body.response_format.json_schema.schema, schema);
+});
 test('scan receipt pins tool version, exact snapshot/answer, and fifteen-minute freshness', () => {
   const data = packageData(), edits = answer(), now = Date.now();
   validateScan(scanReceipt(data, undefined, now), data, undefined, now);
@@ -480,7 +488,7 @@ test('generation refuses absent, stale, or changed-context scan receipts without
   const fetcher = async () => { calls++; assert.fail('Provider calls must be refused.'); };
   for (const receipt of [undefined, {}, scanReceipt(data, undefined, Date.now() - 16 * 60_000),
     scanReceipt(data, undefined, Date.now(), { snapshotDigest: 'wrong' })]) {
-    await assert.rejects(generate(data, '/tmp/not-written-fleet-answer.json', { ...env, DEEPSEEK_API_KEY: 'fixture-only' }, reservation, receipt, fetcher));
+    await assert.rejects(generate(data, '/tmp/not-written-fleet-answer.json', { ...env, MODEL_API_KEY: 'fixture-only' }, reservation, receipt, fetcher));
   }
   assert.equal(calls, 0);
 });
@@ -527,7 +535,7 @@ test('source scanner sees only bounded source/review text and writes an exact di
     for (const arg of ['--redact=100', '--ignore-gitleaks-allow', '--no-banner', '--exit-code=1', '--config']) assert(scan.args.includes(arg));
     assert(scan.args[scan.args.indexOf('--config') + 1].endsWith('/gitleaks.toml'));
     assert.equal(scan.env.HOME, scan.args[1]);
-    for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'DEEPSEEK_API_KEY', 'ANTHROPIC_API_KEY']) assert.equal(scan.env[key], undefined);
+    for (const key of ['GH_TOKEN', 'GITHUB_TOKEN', 'MODEL_API_KEY', 'ANTHROPIC_API_KEY']) assert.equal(scan.env[key], undefined);
     await assert.rejects(access(scan.args[1]));
   });
 });
@@ -565,111 +573,83 @@ test('secret-looking source and malicious scoped patches fail before scanner exe
   });
 });
 
-// Exercise the proxy handler with synthetic streams, never a listening socket.
-async function withInMemoryServer(callback) {
-  const original = http.createServer; let handler;
-  const server = { once() { return this; }, listen(_port, host, done) {
-    assert.equal(host, '127.0.0.1'); queueMicrotask(done);
-  }, address() { return { port: 12345 }; }, closeAllConnections() {}, close(done) { done(); } };
-  http.createServer = callback => { handler = callback; return server; };
-  syncBuiltinESMExports();
-  const request = async (body, options = {}) => {
-    const req = Readable.from([Buffer.from(options.raw ?? JSON.stringify(body))]);
-    req.method = options.method ?? 'POST'; req.url = options.path ?? '/v1/messages';
-    const response = { status: null, body: '', headersSent: false,
-      writeHead(status) { this.status = status; this.headersSent = true; },
-      write(chunk) { this.body += Buffer.from(chunk).toString(); },
-      end(chunk) { if (chunk) this.body += String(chunk); } };
-    await handler(req, response); return response;
-  };
-  try { await callback(request); }
-  finally { http.createServer = original; syncBuiltinESMExports(); }
-}
-test('in-memory proxy pins provider/model, rejects unrelated routes, and hard-caps requests and output tokens', async () => {
-  await withInMemoryServer(async request => {
-    const calls = [];
-    const proxy = await startProxy('fixture-only', async (url, options) => {
-      calls.push({ url, options }); return new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } });
-    });
-    try {
-      assert.equal((await request({}, { path: '/evil' })).status, 400);
-      assert.equal((await request({}, { method: 'GET' })).status, 400);
-      assert.equal((await request({ model: 'other' })).status, 429);
-      assert.equal((await request({}, { raw: 'invalid-json' })).status, 502);
-      assert.equal((await request({}, { raw: 'x'.repeat(LIMITS.requestBytes + 1) })).status, 413);
-      for (let n = 0; n < LIMITS.requests; n++) assert.equal((await request({ model: MODEL, max_tokens: 100_000 })).status, 200);
-      assert.equal((await request({ model: MODEL })).status, 429);
-      assert.equal(calls.length, LIMITS.requests);
-      for (const call of calls) {
-        assert.equal(call.url, 'https://api.deepseek.com/anthropic/v1/messages');
-        assert.equal(call.options.redirect, 'error'); assert.equal(call.options.headers['x-api-key'], 'fixture-only');
-        assert.equal(JSON.parse(call.options.body).max_tokens, LIMITS.outputTokens);
-      }
-    } finally { await proxy.close(); }
+const provider = { url: 'https://ai-gateway.vercel.sh/v1/chat/completions', model: MODEL };
+const completion = (content, extra = {}) => new Response(JSON.stringify({ model: MODEL,
+  choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content } }], ...extra }),
+{ headers: { 'content-type': 'application/json' } });
+test('provider request is one bounded call with the key only in its authorization header', async () => {
+  const calls = []; const edits = answer();
+  const result = await requestEdits('fixture-only', provider, chatRequest(MODEL, packageData()), async (url, options) => {
+    calls.push({ url, options }); return completion(JSON.stringify(edits));
   });
+  assert.deepEqual(result, edits); assert.equal(calls.length, 1); assert.equal(LIMITS.requests, 1);
+  const [{ url, options }] = calls;
+  assert.equal(url, provider.url); assert.equal(options.method, 'POST'); assert.equal(options.redirect, 'error');
+  assert(options.signal instanceof AbortSignal);
+  assert.deepEqual(options.headers, { 'Content-Type': 'application/json', Authorization: 'Bearer fixture-only' });
+  assert(!options.body.includes('fixture-only'));
+  assert.equal(JSON.parse(options.body).max_tokens, LIMITS.outputTokens);
 });
-test('credential, payment, permission, and quota refusals lock the in-memory proxy without raw error disclosure', async () => {
+test('missing key and oversized requests are refused before any provider call', async () => {
+  let calls = 0; const fetcher = async () => { calls++; return completion('{}'); };
+  await assert.rejects(requestEdits('', provider, chatRequest(MODEL, packageData()), fetcher), /MODEL_API_KEY/);
+  await assert.rejects(requestEdits('fixture-only', provider, { model: MODEL, padding: 'x'.repeat(LIMITS.requestBytes) }, fetcher), /bound/);
+  assert.equal(calls, 0);
+});
+test('credential, payment, permission, and quota refusals report status only without raw error disclosure', async () => {
   for (const status of [401, 402, 403, 429]) {
-    await withInMemoryServer(async request => {
-      let calls = 0; const reports = [];
-      const proxy = await startProxy('fixture-provider-secret', async () => {
-        calls++; return new Response('sensitive upstream error', { status });
-      }, report => reports.push(report));
-      try {
-        assert.equal((await request({ model: MODEL })).status, status);
-        assert.equal((await request({ model: MODEL })).status, status);
-        assert.equal(calls, 1); assert.equal(reports.length, 1);
-        assert.equal(JSON.parse(reports[0]).status, status);
-        assert(!reports[0].includes('fixture-provider-secret')); assert(!reports[0].includes('sensitive upstream error'));
-      } finally { await proxy.close(); }
-    });
+    let calls = 0; const reports = [];
+    await assert.rejects(requestEdits('fixture-provider-secret', provider, chatRequest(MODEL, packageData()), async () => {
+      calls++; return new Response('sensitive upstream error', { status });
+    }, report => reports.push(report)), error => !error.message.includes('sensitive') && !error.message.includes('fixture-provider-secret'));
+    assert.equal(calls, 1); assert.equal(reports.length, 1);
+    assert.deepEqual(JSON.parse(reports[0]), { event: 'kody_pilot.provider_rejected', keyRef: 'MODEL_API_KEY', status });
+    assert(!reports[0].includes('fixture-provider-secret')); assert(!reports[0].includes('sensitive upstream error'));
   }
+  const reports = [];
+  await assert.rejects(requestEdits('fixture-only', provider, chatRequest(MODEL, packageData()),
+    async () => new Response('server detail', { status: 500 }), report => reports.push(report)), /no proposal/);
+  assert.equal(reports.length, 0);
 });
-test('expired or revoked approval at proxy request time prevents even a mocked provider call', async () => {
-  await withInMemoryServer(async request => {
-    let calls = 0;
-    const proxy = await startProxy('fixture-only', async () => { calls++; return new Response('{}'); },
-      () => {}, () => { throw new Error('Approval expired.'); });
-    try { assert.equal((await request({ model: MODEL })).status, 502); assert.equal(calls, 0); }
-    finally { await proxy.close(); }
-  });
+test('expired or revoked approval at request time prevents even a mocked provider call', async () => {
+  let calls = 0;
+  await assert.rejects(requestEdits('fixture-only', provider, chatRequest(MODEL, packageData()),
+    async () => { calls++; return completion('{}'); }, () => {}, () => { throw new Error('Approval expired.'); }), /expired/);
+  assert.equal(calls, 0);
 });
-test('generation uses only approved source and a credential-free CLI environment with fake processes', async () => {
+test('empty, truncated, multi-choice, non-JSON, and oversized provider answers are rejected', async () => {
+  const cases = [
+    completion(''), completion('   '), completion('not json'), completion(null),
+    new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: JSON.stringify(answer()) } }] })),
+    new Response(JSON.stringify({ choices: [] })),
+    new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: '{}' } }, { finish_reason: 'stop', message: { content: '{}' } }] })),
+    new Response('not json at all'),
+    new Response('x'.repeat(LIMITS.outputBytes + 1)),
+  ];
+  for (const response of cases)
+    await assert.rejects(requestEdits('fixture-only', provider, chatRequest(MODEL, packageData()), async () => response));
+});
+test('generation writes only a validated answer and never sends GitHub or unrelated credentials', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'fleet-offline-generate-'));
-  const originalSpawn = childProcess.spawn; const launched = [];
-  const data = packageData(), edits = answer();
-  childProcess.spawn = (command, args, options) => {
-    launched.push({ command, args, options });
-    const child = new EventEmitter(); child.stdout = new EventEmitter(); child.stderr = new EventEmitter();
-    child.kill = () => {};
-    child.stdin = new EventEmitter();
-    child.stdin.end = text => {
-      launched.at(-1).prompt = JSON.parse(text);
-      queueMicrotask(() => {
-        child.stdout.emit('data', Buffer.from(JSON.stringify({ is_error: false, structured_output: edits })));
-        child.emit('close', 0);
-      });
-    };
-    return child;
-  };
-  syncBuiltinESMExports();
+  const data = packageData(), edits = answer(); const calls = [];
   try {
-    await withInMemoryServer(async () => {
-      await generate(data, join(dir, 'answer.json'), { ...env, PATH: '/fixture/bin',
-        DEEPSEEK_API_KEY: 'fixture-provider-secret', GH_TOKEN: 'fixture-github-secret',
-        ANTHROPIC_API_KEY: 'fixture-inherited-secret' }, reservationFor(data), scanReceipt(data),
-      async () => assert.fail('Synthetic child must not call a provider.'));
-    });
+    await generate(data, join(dir, 'answer.json'), { ...env, PATH: '/fixture/bin',
+      MODEL_API_KEY: 'fixture-provider-secret', GH_TOKEN: 'fixture-github-secret',
+      ANTHROPIC_API_KEY: 'fixture-inherited-secret' }, reservationFor(data), scanReceipt(data),
+    async (url, options) => { calls.push({ url, options }); return completion(JSON.stringify(edits)); });
     assert.deepEqual(JSON.parse(await readFile(join(dir, 'answer.json'), 'utf8')), edits);
-    assert.equal(launched.length, 1); const child = launched[0];
-    assert.equal(child.command, 'claude'); assert.deepEqual(child.args, claudeArguments());
-    assert.deepEqual(child.prompt, { findings: data.findings, files: data.files.map(({ path, content }) => ({ path, content })) });
-    assert.equal(child.options.env.ANTHROPIC_API_KEY, 'pilot-proxy');
-    assert.equal(child.options.env.GH_TOKEN, undefined); assert.equal(child.options.env.DEEPSEEK_API_KEY, undefined);
-    assert.equal(child.options.env.HOME, child.options.cwd);
-    assert(child.options.env.ANTHROPIC_BASE_URL.startsWith('http://127.0.0.1:'));
-    await assert.rejects(access(child.options.cwd));
-  } finally { childProcess.spawn = originalSpawn; syncBuiltinESMExports(); await rm(dir, { recursive: true, force: true }); }
+    assert.equal(calls.length, 1);
+    const sent = JSON.stringify(calls[0]);
+    for (const secret of ['fixture-github-secret', 'fixture-inherited-secret']) assert(!sent.includes(secret));
+    assert.equal(calls[0].options.headers.Authorization, 'Bearer fixture-provider-secret');
+    const escaped = answer(); escaped.edits[0].path = 'src/other.ts';
+    await assert.rejects(generate(data, join(dir, 'escaped.json'), { ...env, MODEL_API_KEY: 'fixture-only' },
+      reservationFor(data), scanReceipt(data), async () => completion(JSON.stringify(escaped))));
+    await assert.rejects(access(join(dir, 'escaped.json')));
+    await assert.rejects(generate(data, join(dir, 'bad-url.json'), { ...env, MODEL_API_KEY: 'fixture-only',
+      KODY_MODEL_BASE_URL: 'https://evil.example/v1' }, reservationFor(data), scanReceipt(data),
+    async () => assert.fail('Unreviewed endpoints must never be called.')), /base URL/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
 });
 test('source push after branch creation prevents PR publication and never force-updates the branch', async () => {
   const f = fixture(), data = await snapshot(f.request, input), reservation = f.seedReservation(data);

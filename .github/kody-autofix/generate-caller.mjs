@@ -10,7 +10,12 @@ const SHA = /^[a-f0-9]{40}$/;
 const ID = /^[1-9][0-9]{0,15}$/;
 const POLICY = /^(?:pending|approved-[A-Za-z0-9_-]{1,64})$/;
 const OPTIONS = new Set(['repository-id', 'profile', 'source-prefixes', 'shared-sha',
-  'daily-attempt-limit', 'budget-policy-id']);
+  'daily-attempt-limit', 'budget-policy-id', 'model', 'model-base-url']);
+// Kept identical to fleet.mjs (asserted by the tests) so this generator runs without npm dependencies.
+export const DEFAULT_MODEL = 'meta/muse-spark-1.3-contributor';
+export const DEFAULT_MODEL_BASE_URL = 'https://ai-gateway.vercel.sh/v1';
+export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://api.meta.ai/v1']);
+export const MODEL_PATTERN = /^(?:[a-z0-9][a-z0-9-]{0,31}\/)?[a-z0-9][a-z0-9.-]{0,63}$/;
 
 // Single-quoted YAML scalars also safely preserve JSON's quotes and backslashes.
 export const yamlString = (value) => `'${String(value).replaceAll("'", "''")}'`;
@@ -74,15 +79,20 @@ export function validateOptions(options) {
   if (Object.hasOwn(options, 'acknowledge-paid-attempts')) {
     assert(options['acknowledge-paid-attempts'] === true && limit > 0, 'Paid-attempt acknowledgement requires an explicit positive limit.');
   }
+  const model = options.model ?? DEFAULT_MODEL;
+  assert(typeof model === 'string' && MODEL_PATTERN.test(model), 'Model must be a plain provider model identifier.');
+  const modelBaseUrl = options['model-base-url'] ?? DEFAULT_MODEL_BASE_URL;
+  assert(MODEL_BASE_URLS.includes(modelBaseUrl), `Model base URL must be one of: ${MODEL_BASE_URLS.join(', ')}.`);
   return { repositoryId: options['repository-id'], profile: options.profile, prefixes,
-    sharedSha: options['shared-sha'], limit, policy };
+    sharedSha: options['shared-sha'], limit, policy, model, modelBaseUrl };
 }
 
 export function generateCaller(options) {
   const config = validateOptions(options);
-  return `name: Kody DeepSeek Fix Proposals
+  return `name: Kody Muse Spark Fix Proposals
 
 # Generated offline.  Missing SWU_KODY_AUTOFIX_ENABLED means disabled.
+# MODEL_API_KEY is forwarded explicitly; secrets are never inherited.
 # Budget approval and protected-environment setup are separate owner actions.
 # Daily attempt slots bound this repository only; they are not a dollar cap.
 on:
@@ -119,6 +129,10 @@ jobs:
       source_prefixes: ${yamlString(JSON.stringify(config.prefixes))}
       daily_attempt_limit: ${config.limit}
       budget_policy_id: ${yamlString(config.policy)}
+      model: ${yamlString(config.model)}
+      model_base_url: ${yamlString(config.modelBaseUrl)}
+    secrets:
+      MODEL_API_KEY: \${{ secrets.VERCEL_AI_GATEWAY_API_KEY }}
 `;
 }
 
