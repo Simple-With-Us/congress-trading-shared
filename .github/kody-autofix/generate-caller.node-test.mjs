@@ -203,7 +203,10 @@ test('artifact transport is run-scoped, required, short lived, and isolated unde
 });
 
 test('caller and callee concurrency cannot deadlock through an identical key', () => {
-  assert.match(generateCaller(valid()), /group: kody-caller-/);
+  const caller = generateCaller(valid());
+  // One autofix per PR across every bot: the group is shared with PR Autofix and Claude Code Autofix.
+  assert(caller.includes("group: pr-autofix-${{ github.repository }}-${{ github.event.check_run.pull_requests[0].number || github.event.check_run.id }}\n  cancel-in-progress: false\n"));
+  assert(!yaml.includes('group: pr-autofix-'));
   assert.match(job('reserve'), /group: kody-reserve-.*needs\.prepare\.outputs\.utc_day/);
   assert.match(job('publish'), /group: kody-publish-.*needs\.prepare\.outputs\.pr_number/);
   assert.equal((yaml.match(/cancel-in-progress: false/g) ?? []).length, 2);
