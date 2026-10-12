@@ -10,7 +10,9 @@ const valid = (overrides = {}) => ({'repository-id': '123456789', profile: 'web'
   'source-prefixes': '["src/","server/"]', 'shared-sha': 'a'.repeat(40), ...overrides});
 const script = new URL('./generate-caller.mjs', import.meta.url);
 const workflowPath = new URL('../workflows/kody-autofix-reusable.yml', import.meta.url);
+const fleetWorkflowPath = new URL('../workflows/kody-fleet-autofix.yml', import.meta.url);
 const yaml = await readFile(workflowPath, 'utf8');
+const fleetYaml = await readFile(fleetWorkflowPath, 'utf8');
 const job = (name) => {
   const section = yaml.split(`\n  ${name}:\n`)[1];
   assert(section, `Missing job ${name}`);
@@ -262,4 +264,12 @@ test('provider model and endpoint options are validated and match the helper all
     /model: 'MiniMax-M3'\n      model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
   for (const url of ['', 'https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/'])
     assert.throws(() => validateOptions(valid({ 'model-base-url': url })), /base URL/);
+});
+
+test('fleet caller pins the published MiniMax workflow without changing its display name', () => {
+  assert.match(fleetYaml, /^name: Kody MiniMax M3 Fix Proposals$/m);
+  assert.match(fleetYaml, /kody-autofix-reusable\.yml@614ec3938cd7a86bc30a5a5b2367b29fabf40005/);
+  assert.match(fleetYaml, /model: 'MiniMax-M3'\n/);
+  assert.match(fleetYaml, /model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
+  assert.match(fleetYaml, /MODEL_API_KEY: \$\{\{ secrets\.MINIMAX_API_KEY \}\}/);
 });
