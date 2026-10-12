@@ -449,12 +449,14 @@ test('provider configuration accepts only reviewed endpoints and strict model id
   assert.deepEqual(providerFrom({}), { url: 'https://ai-gateway.vercel.sh/v1/chat/completions', model: MODEL });
   assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://api.meta.ai/v1', KODY_MODEL: 'muse-spark-1.3-contributor' }),
     { url: 'https://api.meta.ai/v1/chat/completions', model: 'muse-spark-1.3-contributor' });
+  assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://api.minimax.io/v1', KODY_MODEL: 'MiniMax-M3' }),
+    { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3' });
   assert.equal(providerFrom({ KODY_MODEL: 'minimax/minimax-m3' }).model, 'minimax/minimax-m3');
-  assert.deepEqual([...MODEL_BASE_URLS], ['https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1']);
+  assert.deepEqual([...MODEL_BASE_URLS], ['https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1', 'https://api.minimax.io/v1']);
   for (const url of ['https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/',
     'https://ai-gateway.vercel.sh.evil.example/v1', 'https://user@ai-gateway.vercel.sh/v1', 'https://api.deepseek.com/anthropic'])
     assert.throws(() => providerFrom({ KODY_MODEL_BASE_URL: url }), /base URL/);
-  for (const model of ['META/X', '../x', 'a/b/c', 'x y', '${{ secrets.KEY }}', 'a'.repeat(70), '-x', 'meta/.x'])
+  for (const model of ['../x', 'a/b/c', 'x y', '${{ secrets.KEY }}', 'a'.repeat(70), '-x', 'meta/.x'])
     assert.throws(() => providerFrom({ KODY_MODEL: model }), /model identifier/);
 });
 test('chat request is tool-free, bounded, schema-shaped, and carries only approved source', () => {
@@ -589,6 +591,52 @@ test('provider request is one bounded call with the key only in its authorizatio
   assert.deepEqual(options.headers, { 'Content-Type': 'application/json', Authorization: 'Bearer fixture-only' });
   assert(!options.body.includes('fixture-only'));
   assert.equal(JSON.parse(options.body).max_tokens, LIMITS.outputTokens);
+  assert.equal(JSON.parse(options.body).reasoning_split, undefined);
+});
+test('native MiniMax requests split reasoning and validate base_resp before parsing edits', async () => {
+  const minimax = { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3' };
+  const request = chatRequest(minimax.model, packageData());
+  assert.equal(request.reasoning_split, true);
+  const edits = answer(); const reports = [];
+  const success = completion(JSON.stringify(edits), { model: minimax.model,
+    base_resp: { status_code: 0, status_msg: 'success' } });
+  assert.deepEqual(await requestEdits('fixture-only', minimax, request, async () => success, report => reports.push(report)), edits);
+  assert.equal(reports.length, 0);
+  const fenced = completion(`\`\`\`json\n${JSON.stringify(edits)}\n\`\`\``, { model: minimax.model,
+    base_resp: { status_code: 0, status_msg: 'success' } });
+  assert.deepEqual(await requestEdits('fixture-only', minimax, request, async () => fenced), edits);
+  const plainFence = completion(`\`\`\`\n${JSON.stringify(edits)}\n\`\`\``, { model: minimax.model,
+    base_resp: { status_code: 0, status_msg: 'success' } });
+  assert.deepEqual(await requestEdits('fixture-only', minimax, request, async () => plainFence), edits);
+
+  const failure = completion('<think>must not parse edits</think>', { model: minimax.model,
+    base_resp: { status_code: 1008, status_msg: 'sensitive provider detail' } });
+  await assert.rejects(requestEdits('fixture-provider-secret', minimax, request, async () => failure,
+    report => reports.push(report)), /MiniMax rejected/);
+  assert.deepEqual(JSON.parse(reports[0]), { event: 'kody_pilot.provider_rejected', keyRef: 'MODEL_API_KEY',
+    provider: 'minimax', status: 1008 });
+  assert(!reports[0].includes('sensitive provider detail'));
+  assert(!reports[0].includes('fixture-provider-secret'));
+
+  for (const base_resp of [undefined, null, 'success', {}, { status_code: '0', status_msg: 'success' },
+    { status_code: 0, status_msg: 2 }]) {
+    const response = completion(JSON.stringify(edits), { model: minimax.model, base_resp });
+    const log = [];
+    await assert.rejects(requestEdits('fixture-only', minimax, request, async () => response,
+      report => log.push(report)), /invalid response/);
+    assert.deepEqual(JSON.parse(log[0]), { event: 'kody_pilot.provider_rejected', keyRef: 'MODEL_API_KEY',
+      provider: 'minimax', status: 'malformed_base_resp' });
+  }
+  for (const content of [
+    `prefix\n\`\`\`json\n${JSON.stringify(edits)}\n\`\`\``,
+    `\`\`\`json\n${JSON.stringify(edits)}\n\`\`\`\nsuffix`,
+    `\`\`\`json\n${JSON.stringify(edits)}\n\`\`\`\n\`\`\``,
+    `<think>reasoning</think>${JSON.stringify(edits)}`,
+  ]) {
+    const response = completion(content, { model: minimax.model,
+      base_resp: { status_code: 0, status_msg: 'success' } });
+    await assert.rejects(requestEdits('fixture-only', minimax, request, async () => response), /malformed JSON/);
+  }
 });
 test('missing key and oversized requests are refused before any provider call', async () => {
   let calls = 0; const fetcher = async () => { calls++; return completion('{}'); };

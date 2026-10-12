@@ -14,8 +14,8 @@ const OPTIONS = new Set(['repository-id', 'profile', 'source-prefixes', 'shared-
 // Kept identical to fleet.mjs (asserted by the tests) so this generator runs without npm dependencies.
 export const DEFAULT_MODEL = 'minimax/minimax-m3';
 export const DEFAULT_MODEL_BASE_URL = 'https://ai-gateway.vercel.sh/v1';
-export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://api.meta.ai/v1']);
-export const MODEL_PATTERN = /^(?:[a-z0-9][a-z0-9-]{0,31}\/)?[a-z0-9][a-z0-9.-]{0,63}$/;
+export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://api.meta.ai/v1', 'https://api.minimax.io/v1']);
+export const MODEL_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9-]{0,31}\/)?[A-Za-z0-9][A-Za-z0-9.-]{0,63}$/;
 
 // Single-quoted YAML scalars also safely preserve JSON's quotes and backslashes.
 export const yamlString = (value) => `'${String(value).replaceAll("'", "''")}'`;

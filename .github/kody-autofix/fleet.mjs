@@ -31,8 +31,8 @@ export const KODY = Object.freeze({ login: 'kody-ai', id: 'BOT_kgDOCN-7SQ' });
 // MiniMax M3 through Vercel AI Gateway's OpenAI-compatible chat completions (owner 2026-10-11).
 export const MODEL = 'minimax/minimax-m3';
 export const DEFAULT_MODEL_BASE_URL = 'https://ai-gateway.vercel.sh/v1';
-export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://api.meta.ai/v1']);
-export const MODEL_PATTERN = /^(?:[a-z0-9][a-z0-9-]{0,31}\/)?[a-z0-9][a-z0-9.-]{0,63}$/;
+export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://api.meta.ai/v1', 'https://api.minimax.io/v1']);
+export const MODEL_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9-]{0,31}\/)?[A-Za-z0-9][A-Za-z0-9.-]{0,63}$/;
 const shaPattern = /^[a-f0-9]{40}$/;
 const digest = (text) => createHash('sha256').update(text).digest('hex');
 const fail = (message) => { throw new Error(message); };
@@ -328,6 +328,7 @@ export function providerFrom(env) {
 export function chatRequest(model, snapshot) {
   return {
     model, max_tokens: LIMITS.outputTokens, stream: false,
+    ...(model.startsWith('MiniMax-') ? { reasoning_split: true } : {}),
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: JSON.stringify({ findings: snapshot.findings, files: snapshot.files.map(({path, content}) => ({path, content})) }) },
@@ -343,6 +344,33 @@ async function boundedText(response) {
     chunks.push(Buffer.from(chunk));
   }
   return Buffer.concat(chunks).toString('utf8');
+}
+function validateMiniMaxResponse(result, provider, report) {
+  if (provider.url !== 'https://api.minimax.io/v1/chat/completions') return;
+  const baseResp = result?.base_resp;
+  if (!baseResp || typeof baseResp !== 'object' || Array.isArray(baseResp)
+      || !Number.isSafeInteger(baseResp.status_code) || typeof baseResp.status_msg !== 'string') {
+    report(JSON.stringify({ event: 'kody_pilot.provider_rejected', keyRef: 'MODEL_API_KEY', provider: 'minimax', status: 'malformed_base_resp' }));
+    fail('MiniMax returned an invalid response; no proposal was published.');
+  }
+  if (baseResp.status_code !== 0) {
+    report(JSON.stringify({ event: 'kody_pilot.provider_rejected', keyRef: 'MODEL_API_KEY', provider: 'minimax', status: baseResp.status_code }));
+    fail('MiniMax rejected the request; no proposal was published.');
+  }
+}
+function parseProviderContent(content, provider) {
+  const isMiniMax = provider.url === 'https://api.minimax.io/v1/chat/completions';
+  let source = content;
+  if (isMiniMax && content.includes('```')) {
+    const fence = content.match(/^```(?:json)?\r?\n([\s\S]*?)\r?\n```$/);
+    if (!fence) fail('MiniMax returned malformed JSON; no proposal was published.');
+    source = fence[1];
+  }
+  try { return JSON.parse(source); }
+  catch {
+    if (isMiniMax) fail('MiniMax returned malformed JSON; no proposal was published.');
+    throw new Error('Provider returned malformed JSON; no proposal was published.');
+  }
 }
 export async function requestEdits(key, provider, body, fetcher = fetch, report = console.error, beforeRequest = () => {}) {
   assert(typeof key === 'string' && key.length > 0, 'MODEL_API_KEY is missing; activation is incomplete.');
@@ -361,11 +389,12 @@ export async function requestEdits(key, provider, body, fetcher = fetch, report 
     fail('Provider request failed; no proposal was published.');
   }
   const result = JSON.parse(await boundedText(response));
+  validateMiniMaxResponse(result, provider, report);
   const choice = result?.choices?.[0];
   assert(result?.choices?.length === 1 && choice?.finish_reason === 'stop', 'Provider did not finish one complete answer.');
   const content = choice?.message?.content;
   assert(typeof content === 'string' && content.trim().length > 0, 'Provider returned no answer.');
-  return JSON.parse(content);
+  return parseProviderContent(content, provider);
 }
 export async function generate(snapshot, outputPath, env, reservation, scanReceipt, fetcher = fetch) {
   validateReservation(reservation,snapshot,env);
