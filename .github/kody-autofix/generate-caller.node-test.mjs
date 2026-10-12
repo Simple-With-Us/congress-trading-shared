@@ -10,7 +10,9 @@ const valid = (overrides = {}) => ({'repository-id': '123456789', profile: 'web'
   'source-prefixes': '["src/","server/"]', 'shared-sha': 'a'.repeat(40), ...overrides});
 const script = new URL('./generate-caller.mjs', import.meta.url);
 const workflowPath = new URL('../workflows/kody-autofix-reusable.yml', import.meta.url);
+const fleetWorkflowPath = new URL('../workflows/kody-fleet-autofix.yml', import.meta.url);
 const yaml = await readFile(workflowPath, 'utf8');
+const fleetYaml = await readFile(fleetWorkflowPath, 'utf8');
 const job = (name) => {
   const section = yaml.split(`\n  ${name}:\n`)[1];
   assert(section, `Missing job ${name}`);
@@ -34,12 +36,12 @@ test('offline caller defaults to no paid attempts and no implicit enablement', (
   assert.match(caller, /repository_id: '123456789'\n/);
   assert.match(caller, /source_prefixes: '\["src\/","server\/"\]'\n/);
   // The provider key is forwarded explicitly and only once; secrets are never inherited.
-  assert(caller.endsWith("    secrets:\n      MODEL_API_KEY: ${{ secrets.VERCEL_AI_GATEWAY_API_KEY }}\n"));
+  assert(caller.endsWith("    secrets:\n      MODEL_API_KEY: ${{ secrets.MINIMAX_API_KEY }}\n"));
   assert.equal((caller.match(/secrets\./g) ?? []).length, 1);
   assert(!caller.includes('secrets: inherit'));
   assert.match(caller, /^name: Kody MiniMax M3 Fix Proposals$/m);
-  assert.match(caller, /model: 'minimax\/minimax-m3'\n/);
-  assert.match(caller, /model_base_url: 'https:\/\/ai-gateway\.vercel\.sh\/v1'\n/);
+  assert.match(caller, /model: 'MiniMax-M3'\n/);
+  assert.match(caller, /model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
   assert(!caller.includes('workflow_dispatch'));
   assert(!caller.includes('pull_request_review:'));
   assert(!caller.includes('issue_comment:'));
@@ -245,13 +247,31 @@ test('provider model and endpoint options are validated and match the helper all
   assert.equal(DEFAULT_MODEL_BASE_URL, fleet.DEFAULT_MODEL_BASE_URL);
   assert.deepEqual([...MODEL_BASE_URLS], [...fleet.MODEL_BASE_URLS]);
   assert.equal(String(MODEL_PATTERN), String(fleet.MODEL_PATTERN));
-  assert.match(yaml, /      model:\n[\s\S]*?default: minimax\/minimax-m3\n/);
-  assert.match(yaml, /      model_base_url:\n[\s\S]*?default: https:\/\/ai-gateway\.vercel\.sh\/v1\n/);
+  assert.match(yaml, /      model:\n[\s\S]*?default: MiniMax-M3\n/);
+  assert.match(yaml, /      model_base_url:\n[\s\S]*?default: https:\/\/api\.minimax\.io\/v1\n/);
+  assert.equal([...yaml.matchAll(/ref: 'b1503884e547a8fb5d1449a94e03cae8c496da4c'/g)].length, 4);
   const native = generateCaller(valid({ model: 'muse-spark-1.3-contributor', 'model-base-url': 'https://api.meta.ai/v1' }));
   assert.match(native, /model: 'muse-spark-1\.3-contributor'\n      model_base_url: 'https:\/\/api\.meta\.ai\/v1'\n/);
-  assert.match(generateCaller(valid({ model: 'minimax/minimax-m3' })), /model: 'minimax\/minimax-m3'\n/);
-  for (const model of ['', 'META/X', '../x', 'a/b/c', "x'y", '${{ secrets.KEY }}', 'x\nsecrets: inherit'])
+  const oldGateway = generateCaller(valid({ model: 'minimax/minimax-m3', 'model-base-url': 'https://ai-gateway.vercel.sh/v1' }));
+  assert.match(oldGateway, /model: 'minimax\/minimax-m3'\n      model_base_url: 'https:\/\/ai-gateway\.vercel\.sh\/v1'\n/);
+  assert.match(oldGateway, /MODEL_API_KEY: \$\{\{ secrets\.VERCEL_AI_GATEWAY_API_KEY \}\}/);
+  const oldMeta = generateCaller(valid({ model: 'muse-spark-1.3-contributor', 'model-base-url': 'https://api.meta.ai/v1' }));
+  assert.match(oldMeta, /MODEL_API_KEY: \$\{\{ secrets\.VERCEL_AI_GATEWAY_API_KEY \}\}/);
+  for (const url of ['https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1'])
+    assert.throws(() => validateOptions(valid({ 'model-base-url': url })), /--model is required/);
+  for (const model of ['', '../x', 'a/b/c', "x'y", '${{ secrets.KEY }}', 'x\nsecrets: inherit'])
     assert.throws(() => validateOptions(valid({ model })), /Model/);
+  assert.equal(validateOptions(valid({ model: 'MiniMax-M3' })).model, 'MiniMax-M3');
+  assert.match(generateCaller(valid({ model: 'MiniMax-M3', 'model-base-url': 'https://api.minimax.io/v1' })),
+    /model: 'MiniMax-M3'\n      model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
   for (const url of ['', 'https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/'])
     assert.throws(() => validateOptions(valid({ 'model-base-url': url })), /base URL/);
+});
+
+test('fleet caller pins the published MiniMax workflow without changing its display name', () => {
+  assert.match(fleetYaml, /^name: Kody MiniMax M3 Fix Proposals$/m);
+  assert.match(fleetYaml, /kody-autofix-reusable\.yml@fea7cd120407b157c3d1f5edc5b08ff15d3f0e73/);
+  assert.match(fleetYaml, /model: 'MiniMax-M3'\n/);
+  assert.match(fleetYaml, /model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
+  assert.match(fleetYaml, /MODEL_API_KEY: \$\{\{ secrets\.MINIMAX_API_KEY \}\}/);
 });
