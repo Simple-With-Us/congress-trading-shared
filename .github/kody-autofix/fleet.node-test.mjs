@@ -602,7 +602,11 @@ test('native MiniMax requests split reasoning and validate base_resp before pars
     base_resp: { status_code: 0, status_msg: 'success' } });
   assert.deepEqual(await requestEdits('fixture-only', minimax, request, async () => success, report => reports.push(report)), edits);
   assert.equal(reports.length, 0);
-  const fenced = completion(`\`\`\`json\n${JSON.stringify(edits)}\n\`\`\``, { model: minimax.model,
+  const editsWithCodeFence = answer(); editsWithCodeFence.edits[0].new_text = 'const note = "```";';
+  const rawWithCodeFence = completion(JSON.stringify(editsWithCodeFence), { model: minimax.model,
+    base_resp: { status_code: 0, status_msg: 'success' } });
+  assert.deepEqual(await requestEdits('fixture-only', minimax, request, async () => rawWithCodeFence), editsWithCodeFence);
+  const fenced = completion(` \n\`\`\`json\n${JSON.stringify(edits)}\n\`\`\` \t`, { model: minimax.model,
     base_resp: { status_code: 0, status_msg: 'success' } });
   assert.deepEqual(await requestEdits('fixture-only', minimax, request, async () => fenced), edits);
   const plainFence = completion(`\`\`\`\n${JSON.stringify(edits)}\n\`\`\``, { model: minimax.model,

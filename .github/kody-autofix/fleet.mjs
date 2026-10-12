@@ -360,17 +360,13 @@ function validateMiniMaxResponse(result, provider, report) {
 }
 function parseProviderContent(content, provider) {
   const isMiniMax = provider.url === 'https://api.minimax.io/v1/chat/completions';
-  let source = content;
-  if (isMiniMax && content.includes('```')) {
-    const fence = content.match(/^```(?:json)?\r?\n([\s\S]*?)\r?\n```$/);
-    if (!fence) fail('MiniMax returned malformed JSON; no proposal was published.');
-    source = fence[1];
-  }
-  try { return JSON.parse(source); }
-  catch {
-    if (isMiniMax) fail('MiniMax returned malformed JSON; no proposal was published.');
-    throw new Error('Provider returned malformed JSON; no proposal was published.');
-  }
+  try { return JSON.parse(content); }
+  catch { /* Native MiniMax may wrap the entire JSON answer in one code fence. */ }
+  if (!isMiniMax) fail('Provider returned malformed JSON; no proposal was published.');
+  const fence = content.trim().match(/^```(?:json)?\r?\n([\s\S]*?)\r?\n```$/);
+  if (!fence) fail('MiniMax returned malformed JSON; no proposal was published.');
+  try { return JSON.parse(fence[1]); }
+  catch { fail('MiniMax returned malformed JSON; no proposal was published.'); }
 }
 export async function requestEdits(key, provider, body, fetcher = fetch, report = console.error, beforeRequest = () => {}) {
   assert(typeof key === 'string' && key.length > 0, 'MODEL_API_KEY is missing; activation is incomplete.');
