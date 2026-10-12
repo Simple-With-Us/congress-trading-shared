@@ -38,5 +38,5 @@ after a runner shutdown.
 Run focused tests with:
 
 ```sh
-node --test .github/actions/autofix-diagnostics/test/reduce.test.mjs
+node --test .github/actions/autofix-diagnostics/test/reduce.node-test.mjs
 ```

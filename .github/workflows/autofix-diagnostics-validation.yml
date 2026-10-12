@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: 24
       - name: Test Sanitization And Failure Wiring
-        run: node --test .github/actions/autofix-diagnostics/test/reduce.test.mjs .github/autofix-diagnostics-workflow.node-test.mjs
+        run: node --test .github/actions/autofix-diagnostics/test/reduce.node-test.mjs .github/autofix-diagnostics-workflow.node-test.mjs
       - name: Simulate A Capped Run Without A Model Call
         id: fixture
         continue-on-error: true
