@@ -37,8 +37,8 @@ test('offline caller defaults to no paid attempts and no implicit enablement', (
   assert(caller.endsWith("    secrets:\n      MODEL_API_KEY: ${{ secrets.VERCEL_AI_GATEWAY_API_KEY }}\n"));
   assert.equal((caller.match(/secrets\./g) ?? []).length, 1);
   assert(!caller.includes('secrets: inherit'));
-  assert.match(caller, /^name: Kody Muse Spark Fix Proposals$/m);
-  assert.match(caller, /model: 'meta\/muse-spark-1\.3-contributor'\n/);
+  assert.match(caller, /^name: Kody MiniMax M3 Fix Proposals$/m);
+  assert.match(caller, /model: 'minimax\/minimax-m3'\n/);
   assert.match(caller, /model_base_url: 'https:\/\/ai-gateway\.vercel\.sh\/v1'\n/);
   assert(!caller.includes('workflow_dispatch'));
   assert(!caller.includes('pull_request_review:'));
@@ -245,13 +245,11 @@ test('provider model and endpoint options are validated and match the helper all
   assert.equal(DEFAULT_MODEL_BASE_URL, fleet.DEFAULT_MODEL_BASE_URL);
   assert.deepEqual([...MODEL_BASE_URLS], [...fleet.MODEL_BASE_URLS]);
   assert.equal(String(MODEL_PATTERN), String(fleet.MODEL_PATTERN));
-  assert.match(yaml, /      model:\n[\s\S]*?default: meta\/muse-spark-1\.3-contributor\n/);
+  assert.match(yaml, /      model:\n[\s\S]*?default: minimax\/minimax-m3\n/);
   assert.match(yaml, /      model_base_url:\n[\s\S]*?default: https:\/\/ai-gateway\.vercel\.sh\/v1\n/);
-  const native = generateCaller(valid({ model: 'muse-spark-1.3-contributor', 'model-base-url': 'https://api.meta.ai/v1' }));
-  assert.match(native, /model: 'muse-spark-1\.3-contributor'\n      model_base_url: 'https:\/\/api\.meta\.ai\/v1'\n/);
-  assert.match(generateCaller(valid({ model: 'meta/muse-spark-1.3' })), /model: 'meta\/muse-spark-1\.3'\n/);
+  assert.match(generateCaller(valid({ model: 'minimax/minimax-m3' })), /model: 'minimax\/minimax-m3'\n/);
   for (const model of ['', 'META/X', '../x', 'a/b/c', "x'y", '${{ secrets.KEY }}', 'x\nsecrets: inherit'])
     assert.throws(() => validateOptions(valid({ model })), /Model/);
-  for (const url of ['', 'https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/'])
+  for (const url of ['', 'https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/', 'https://api.meta.ai/v1'])
     assert.throws(() => validateOptions(valid({ 'model-base-url': url })), /base URL/);
 });

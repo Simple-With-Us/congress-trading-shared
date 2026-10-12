@@ -445,12 +445,10 @@ test('late concurrent source push prevents branch creation without force or roll
   assert.deepEqual(f.writes.map(w => w.path), ['git/trees', 'git/commits']);
 });
 test('provider configuration accepts only reviewed endpoints and strict model identifiers', () => {
-  assert.equal(MODEL, 'meta/muse-spark-1.3-contributor');
+  assert.equal(MODEL, 'minimax/minimax-m3');
   assert.deepEqual(providerFrom({}), { url: 'https://ai-gateway.vercel.sh/v1/chat/completions', model: MODEL });
-  assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://api.meta.ai/v1', KODY_MODEL: 'muse-spark-1.3-contributor' }),
-    { url: 'https://api.meta.ai/v1/chat/completions', model: 'muse-spark-1.3-contributor' });
-  assert.equal(providerFrom({ KODY_MODEL: 'meta/muse-spark-1.3' }).model, 'meta/muse-spark-1.3');
-  assert.deepEqual([...MODEL_BASE_URLS], ['https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1']);
+  assert.equal(providerFrom({ KODY_MODEL: 'minimax/minimax-m3' }).model, 'minimax/minimax-m3');
+  assert.deepEqual([...MODEL_BASE_URLS], ['https://ai-gateway.vercel.sh/v1']);
   for (const url of ['https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/',
     'https://ai-gateway.vercel.sh.evil.example/v1', 'https://user@ai-gateway.vercel.sh/v1', 'https://api.deepseek.com/anthropic'])
     assert.throws(() => providerFrom({ KODY_MODEL_BASE_URL: url }), /base URL/);
