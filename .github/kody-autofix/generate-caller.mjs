@@ -12,7 +12,7 @@ const POLICY = /^(?:pending|approved-[A-Za-z0-9_-]{1,64})$/;
 const OPTIONS = new Set(['repository-id', 'profile', 'source-prefixes', 'shared-sha',
   'daily-attempt-limit', 'budget-policy-id', 'model', 'model-base-url']);
 // Kept identical to fleet.mjs (asserted by the tests) so this generator runs without npm dependencies.
-export const DEFAULT_MODEL = 'meta/muse-spark-1.3-contributor';
+export const DEFAULT_MODEL = 'minimax/minimax-m3';
 export const DEFAULT_MODEL_BASE_URL = 'https://ai-gateway.vercel.sh/v1';
 export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://api.meta.ai/v1']);
 export const MODEL_PATTERN = /^(?:[a-z0-9][a-z0-9-]{0,31}\/)?[a-z0-9][a-z0-9.-]{0,63}$/;
@@ -89,7 +89,7 @@ export function validateOptions(options) {
 
 export function generateCaller(options) {
   const config = validateOptions(options);
-  return `name: Kody Muse Spark Fix Proposals
+  return `name: Kody MiniMax M3 Fix Proposals
 
 # Generated offline.  Missing SWU_KODY_AUTOFIX_ENABLED means disabled.
 # MODEL_API_KEY is forwarded explicitly; secrets are never inherited.

@@ -1,12 +1,9 @@
-name: Kody Muse Spark Fix Proposals (Reusable)
+name: Kody MiniMax M3 Fix Proposals (Reusable)
 
 # Separate from the legacy Codex autofix workflow.  No secrets are inherited.
 # The trusted helper is independently pinned to its immutable publication commit.
-# Provider: Meta Muse Spark via Vercel AI Gateway chat completions (owner 2026-10-11).
+# Provider: MiniMax M3 via Vercel AI Gateway chat completions (owner 2026-10-11).
 # Callers forward MODEL_API_KEY explicitly, today from the org secret VERCEL_AI_GATEWAY_API_KEY.
-# Native Meta switch: add a Meta key as an org secret, forward it as MODEL_API_KEY, and set
-# model_base_url 'https://api.meta.ai/v1' with model 'muse-spark-1.3-contributor'.  That endpoint is
-# allowlisted in the helper but untested; Meta documents a Responses API, so verify chat completions first.
 on:
   workflow_call:
     inputs:
@@ -36,7 +33,7 @@ on:
         description: Provider model identifier; the helper rejects anything outside its strict pattern
         required: false
         type: string
-        default: meta/muse-spark-1.3-contributor
+        default: minimax/minimax-m3
       model_base_url:
         description: OpenAI-compatible base URL; the helper accepts only its reviewed allowlist
         required: false

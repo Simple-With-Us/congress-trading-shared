@@ -28,9 +28,8 @@ export const LIMITS = Object.freeze({ files: 5, findings: 8, fileBytes: 64_000, 
   edits: 12, replacementBytes: 24_000, outputBytes: 180_000, requests: 1, requestBytes: 256_000,
   outputTokens: 16_384, modelMs: 240_000 });
 export const KODY = Object.freeze({ login: 'kody-ai', id: 'BOT_kgDOCN-7SQ' });
-// Meta Muse Spark through Vercel AI Gateway's OpenAI-compatible chat completions (owner 2026-10-11).
-// api.meta.ai is allowlisted for a later native-key switch but has not been exercised by this controller.
-export const MODEL = 'meta/muse-spark-1.3-contributor';
+// MiniMax M3 through Vercel AI Gateway's OpenAI-compatible chat completions (owner 2026-10-11).
+export const MODEL = 'minimax/minimax-m3';
 export const DEFAULT_MODEL_BASE_URL = 'https://ai-gateway.vercel.sh/v1';
 export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://api.meta.ai/v1']);
 export const MODEL_PATTERN = /^(?:[a-z0-9][a-z0-9-]{0,31}\/)?[a-z0-9][a-z0-9.-]{0,63}$/;
