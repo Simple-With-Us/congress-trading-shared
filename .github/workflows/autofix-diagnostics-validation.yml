@@ -74,7 +74,7 @@ jobs:
           assert(raw.includes('error_max_turns'));
           assert(raw.includes('Bash'));
           assert(Buffer.byteLength(raw) <= 262144);
-          JSON.parse(raw);
+          assert.equal(JSON.parse(raw).result.is_error, true);
           JS
       - name: Upload Only The Synthetic Metadata
         if: ${{ always() && steps.diagnostics.outputs.summary-path != '' }}
