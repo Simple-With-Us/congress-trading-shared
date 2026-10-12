@@ -247,9 +247,11 @@ test('provider model and endpoint options are validated and match the helper all
   assert.equal(String(MODEL_PATTERN), String(fleet.MODEL_PATTERN));
   assert.match(yaml, /      model:\n[\s\S]*?default: minimax\/minimax-m3\n/);
   assert.match(yaml, /      model_base_url:\n[\s\S]*?default: https:\/\/ai-gateway\.vercel\.sh\/v1\n/);
+  const native = generateCaller(valid({ model: 'muse-spark-1.3-contributor', 'model-base-url': 'https://api.meta.ai/v1' }));
+  assert.match(native, /model: 'muse-spark-1\.3-contributor'\n      model_base_url: 'https:\/\/api\.meta\.ai\/v1'\n/);
   assert.match(generateCaller(valid({ model: 'minimax/minimax-m3' })), /model: 'minimax\/minimax-m3'\n/);
   for (const model of ['', 'META/X', '../x', 'a/b/c', "x'y", '${{ secrets.KEY }}', 'x\nsecrets: inherit'])
     assert.throws(() => validateOptions(valid({ model })), /Model/);
-  for (const url of ['', 'https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/', 'https://api.meta.ai/v1'])
+  for (const url of ['', 'https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/'])
     assert.throws(() => validateOptions(valid({ 'model-base-url': url })), /base URL/);
 });

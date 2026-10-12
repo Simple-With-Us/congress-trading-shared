@@ -31,7 +31,7 @@ export const KODY = Object.freeze({ login: 'kody-ai', id: 'BOT_kgDOCN-7SQ' });
 // MiniMax M3 through Vercel AI Gateway's OpenAI-compatible chat completions (owner 2026-10-11).
 export const MODEL = 'minimax/minimax-m3';
 export const DEFAULT_MODEL_BASE_URL = 'https://ai-gateway.vercel.sh/v1';
-export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL]);
+export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://api.meta.ai/v1']);
 export const MODEL_PATTERN = /^(?:[a-z0-9][a-z0-9-]{0,31}\/)?[a-z0-9][a-z0-9.-]{0,63}$/;
 const shaPattern = /^[a-f0-9]{40}$/;
 const digest = (text) => createHash('sha256').update(text).digest('hex');
