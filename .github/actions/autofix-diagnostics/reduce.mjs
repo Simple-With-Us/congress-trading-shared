@@ -87,13 +87,13 @@ export function reduceTranscript(messages, result = {}) {
     schema_version: 1,
     availability: 'available',
     counts: { ...counts, event_rows: events.length, repeated_call_groups: repeatedGroups },
-    result: { subtype: knownSubtype(result.subtype), duration_ms: boundedInt(result.duration_ms, 86_400_000), num_turns: boundedInt(result.num_turns) },
+    result: { subtype: knownSubtype(result.subtype), is_error: result.is_error === true, duration_ms: boundedInt(result.duration_ms, 86_400_000), num_turns: boundedInt(result.num_turns) },
     events,
   };
 }
 
 function unavailable(status) {
-  return { schema_version: 1, availability: status, counts: { assistant_messages: 0, user_messages: 0, tool_uses: 0, tool_results: 0, event_rows: 0, repeated_call_groups: 0 }, result: { subtype: 'other', duration_ms: null, num_turns: null }, events: [] };
+  return { schema_version: 1, availability: status, counts: { assistant_messages: 0, user_messages: 0, tool_uses: 0, tool_results: 0, event_rows: 0, repeated_call_groups: 0 }, result: { subtype: 'other', is_error: false, duration_ms: null, num_turns: null }, events: [] };
 }
 
 function appendActionOutput(value) {
