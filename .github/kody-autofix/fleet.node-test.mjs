@@ -462,15 +462,17 @@ test('provider configuration accepts only reviewed endpoints and strict model id
 });
 test('chat request is tool-free, bounded, schema-shaped, and carries only approved source', () => {
   const data = packageData(); const body = chatRequest(MODEL, data);
-  assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'reasoning_split', 'response_format', 'stream']);
+  assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'reasoning_split', 'stream']);
   assert.equal(body.max_tokens, LIMITS.outputTokens); assert.equal(body.stream, false);
   assert.equal(body.reasoning_split, true);
   assert.equal(body.tools, undefined); assert.equal(body.tool_choice, undefined);
   assert.equal(body.messages[0].content, SYSTEM_PROMPT);
   assert(SYSTEM_PROMPT.includes(JSON.stringify(schema)));
   assert.deepEqual(JSON.parse(body.messages[1].content), { findings: data.findings, files: data.files.map(({ path, content }) => ({ path, content })) });
-  assert.deepEqual(body.response_format.json_schema.schema, schema);
-  assert.equal(chatRequest(MODEL, data, 'https://ai-gateway.vercel.sh/v1').messages[0].content, SYSTEM_PROMPT);
+  assert.equal(body.response_format, undefined);
+  const gatewayRequest = chatRequest(MODEL, data, 'https://ai-gateway.vercel.sh/v1');
+  assert.equal(gatewayRequest.messages[0].content, SYSTEM_PROMPT);
+  assert.deepEqual(gatewayRequest.response_format.json_schema.schema, schema);
 });
 test('scan receipt pins tool version, exact snapshot/answer, and fifteen-minute freshness', () => {
   const data = packageData(), edits = answer(), now = Date.now();
@@ -604,6 +606,7 @@ test('native MiniMax requests split reasoning and validate base_resp before pars
   assert.equal(request.reasoning_split, true);
   assert.equal(request.messages[0].content, SYSTEM_PROMPT);
   assert(request.messages[0].content.includes(JSON.stringify(schema)));
+  assert.equal(request.response_format, undefined);
   const edits = answer(); const reports = [];
   const success = completion(JSON.stringify(edits), { model: minimax.model,
     base_resp: { status_code: 0, status_msg: 'success' } });
