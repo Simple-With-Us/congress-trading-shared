@@ -257,6 +257,8 @@ test('provider model and endpoint options are validated and match the helper all
   assert.match(oldGateway, /MODEL_API_KEY: \$\{\{ secrets\.VERCEL_AI_GATEWAY_API_KEY \}\}/);
   const oldMeta = generateCaller(valid({ model: 'muse-spark-1.3-contributor', 'model-base-url': 'https://api.meta.ai/v1' }));
   assert.match(oldMeta, /MODEL_API_KEY: \$\{\{ secrets\.VERCEL_AI_GATEWAY_API_KEY \}\}/);
+  for (const url of ['https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1'])
+    assert.throws(() => validateOptions(valid({ 'model-base-url': url })), /--model is required/);
   for (const model of ['', '../x', 'a/b/c', "x'y", '${{ secrets.KEY }}', 'x\nsecrets: inherit'])
     assert.throws(() => validateOptions(valid({ model })), /Model/);
   assert.equal(validateOptions(valid({ model: 'MiniMax-M3' })).model, 'MiniMax-M3');

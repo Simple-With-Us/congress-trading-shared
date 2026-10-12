@@ -79,10 +79,12 @@ export function validateOptions(options) {
   if (Object.hasOwn(options, 'acknowledge-paid-attempts')) {
     assert(options['acknowledge-paid-attempts'] === true && limit > 0, 'Paid-attempt acknowledgement requires an explicit positive limit.');
   }
-  const model = options.model ?? DEFAULT_MODEL;
-  assert(typeof model === 'string' && MODEL_PATTERN.test(model), 'Model must be a plain provider model identifier.');
   const modelBaseUrl = options['model-base-url'] ?? DEFAULT_MODEL_BASE_URL;
   assert(MODEL_BASE_URLS.includes(modelBaseUrl), `Model base URL must be one of: ${MODEL_BASE_URLS.join(', ')}.`);
+  assert(Object.hasOwn(options, 'model') || modelBaseUrl === DEFAULT_MODEL_BASE_URL,
+    '--model is required when --model-base-url selects a nonnative MiniMax endpoint.');
+  const model = options.model ?? DEFAULT_MODEL;
+  assert(typeof model === 'string' && MODEL_PATTERN.test(model), 'Model must be a plain provider model identifier.');
   return { repositoryId: options['repository-id'], profile: options.profile, prefixes,
     sharedSha: options['shared-sha'], limit, policy, model, modelBaseUrl,
     apiKeySecret: modelBaseUrl === 'https://api.minimax.io/v1' ? 'MINIMAX_API_KEY' : 'VERCEL_AI_GATEWAY_API_KEY' };
