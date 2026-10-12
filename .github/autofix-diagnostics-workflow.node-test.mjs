@@ -16,7 +16,7 @@ test('failed model steps remain failed and diagnostics run afterward without raw
   assert(steps.indexOf(model) < steps.indexOf(reducer));
   assert(steps.indexOf(reducer) < steps.indexOf(upload));
   assert.match(reducer, /if: \$\{\{ always\(\) \}\}/);
-  assert.match(reducer, /uses: Simple-With-Us\/congress-trading-shared\/\.github\/actions\/autofix-diagnostics@[a-f0-9]{40}\s/);
+  assert.match(reducer, /uses: \.\/\.github\/actions\/autofix-diagnostics\b/);
 });
 
 test('failure artifacts contain only the reducer output and expire after seven days', () => {
