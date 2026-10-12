@@ -462,9 +462,10 @@ test('provider configuration accepts only reviewed endpoints and strict model id
 });
 test('chat request is tool-free, bounded, schema-shaped, and carries only approved source', () => {
   const data = packageData(); const body = chatRequest(MODEL, data);
-  assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'reasoning_split', 'stream']);
+  assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'stream', 'thinking']);
   assert.equal(body.max_tokens, LIMITS.outputTokens); assert.equal(body.stream, false);
-  assert.equal(body.reasoning_split, true);
+  assert.equal(body.reasoning_split, undefined);
+  assert.deepEqual(body.thinking, { type: 'disabled' });
   assert.equal(body.tools, undefined); assert.equal(body.tool_choice, undefined);
   assert.equal(body.messages[0].content, SYSTEM_PROMPT);
   assert(SYSTEM_PROMPT.includes(JSON.stringify(schema)));
@@ -475,6 +476,8 @@ test('chat request is tool-free, bounded, schema-shaped, and carries only approv
   assert.equal(body.response_format, undefined);
   const gatewayRequest = chatRequest(MODEL, data, 'https://ai-gateway.vercel.sh/v1');
   assert.equal(gatewayRequest.messages[0].content, SYSTEM_PROMPT);
+  assert.equal(gatewayRequest.thinking, undefined);
+  assert.equal(gatewayRequest.reasoning_split, undefined);
   assert.deepEqual(gatewayRequest.response_format.json_schema.schema, schema);
 });
 test('scan receipt pins tool version, exact snapshot/answer, and fifteen-minute freshness', () => {
@@ -603,13 +606,21 @@ test('provider request is one bounded call with the key only in its authorizatio
   assert.equal(JSON.parse(options.body).max_tokens, LIMITS.outputTokens);
   assert.equal(JSON.parse(options.body).reasoning_split, undefined);
 });
-test('native MiniMax requests split reasoning and validate base_resp before parsing edits', async () => {
+test('native MiniMax-M3 disables thinking and validates base_resp before parsing edits', async () => {
   const minimax = { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3' };
   const request = chatRequest(minimax.model, packageData(), 'https://api.minimax.io/v1');
-  assert.equal(request.reasoning_split, true);
+  assert.deepEqual(request.thinking, { type: 'disabled' });
+  assert.equal(request.reasoning_split, undefined);
   assert.equal(request.messages[0].content, SYSTEM_PROMPT);
   assert(request.messages[0].content.includes(JSON.stringify(schema)));
   assert.equal(request.response_format, undefined);
+  const otherNativeModel = chatRequest('MiniMax-M3.1-Flash-Preview', packageData(), 'https://api.minimax.io/v1');
+  assert.equal(otherNativeModel.reasoning_split, true);
+  assert.equal(otherNativeModel.thinking, undefined);
+  const gatewayMiniMax = chatRequest('minimax/minimax-m3', packageData(), 'https://ai-gateway.vercel.sh/v1');
+  assert.equal(gatewayMiniMax.reasoning_split, undefined);
+  assert.equal(gatewayMiniMax.thinking, undefined);
+  assert.deepEqual(gatewayMiniMax.response_format.json_schema.schema, schema);
   const edits = answer(); const reports = [];
   const success = completion(JSON.stringify(edits), { model: minimax.model,
     base_resp: { status_code: 0, status_msg: 'success' } });

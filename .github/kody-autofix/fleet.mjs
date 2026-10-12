@@ -329,9 +329,11 @@ export function providerFrom(env) {
 }
 export function chatRequest(model, snapshot, modelBaseUrl = DEFAULT_MODEL_BASE_URL) {
   const isNativeMiniMax = modelBaseUrl === 'https://api.minimax.io/v1' && model.startsWith('MiniMax-');
+  const isNativeMiniMaxM3 = modelBaseUrl === 'https://api.minimax.io/v1' && model === 'MiniMax-M3';
   return {
     model, max_tokens: LIMITS.outputTokens, stream: false,
-    ...(isNativeMiniMax ? { reasoning_split: true } : {}),
+    ...(isNativeMiniMax && !isNativeMiniMaxM3 ? { reasoning_split: true } : {}),
+    ...(isNativeMiniMaxM3 ? { thinking: { type: 'disabled' } } : {}),
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: JSON.stringify({ findings: snapshot.findings, files: snapshot.files.map(({path, content}) => ({path, content})) }) },
