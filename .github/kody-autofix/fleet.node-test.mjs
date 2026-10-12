@@ -466,9 +466,11 @@ test('chat request is tool-free, bounded, schema-shaped, and carries only approv
   assert.equal(body.max_tokens, LIMITS.outputTokens); assert.equal(body.stream, false);
   assert.equal(body.reasoning_split, true);
   assert.equal(body.tools, undefined); assert.equal(body.tool_choice, undefined);
-  assert.equal(body.messages[0].content, SYSTEM_PROMPT);
+  assert(body.messages[0].content.startsWith(SYSTEM_PROMPT));
+  assert(body.messages[0].content.endsWith(JSON.stringify(schema)));
   assert.deepEqual(JSON.parse(body.messages[1].content), { findings: data.findings, files: data.files.map(({ path, content }) => ({ path, content })) });
   assert.deepEqual(body.response_format.json_schema.schema, schema);
+  assert.equal(chatRequest(MODEL, data, 'https://ai-gateway.vercel.sh/v1').messages[0].content, SYSTEM_PROMPT);
 });
 test('scan receipt pins tool version, exact snapshot/answer, and fifteen-minute freshness', () => {
   const data = packageData(), edits = answer(), now = Date.now();
@@ -600,6 +602,8 @@ test('native MiniMax requests split reasoning and validate base_resp before pars
   const minimax = { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3' };
   const request = chatRequest(minimax.model, packageData(), 'https://api.minimax.io/v1');
   assert.equal(request.reasoning_split, true);
+  assert(request.messages[0].content.startsWith(`${SYSTEM_PROMPT}\n\nRequired response JSON Schema (follow exactly):\n`));
+  assert(request.messages[0].content.endsWith(JSON.stringify(schema)));
   const edits = answer(); const reports = [];
   const success = completion(JSON.stringify(edits), { model: minimax.model,
     base_resp: { status_code: 0, status_msg: 'success' } });
