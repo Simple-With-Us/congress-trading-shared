@@ -336,7 +336,7 @@ export function chatRequest(model, snapshot, modelBaseUrl = DEFAULT_MODEL_BASE_U
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: JSON.stringify({ findings: snapshot.findings, files: snapshot.files.map(({path, content}) => ({path, content})) }) },
     ],
-    response_format: { type: 'json_schema', json_schema: { name: 'kody_fix_edits', schema } },
+    ...(isNativeMiniMax ? {} : { response_format: { type: 'json_schema', json_schema: { name: 'kody_fix_edits', schema } } }),
   };
 }
 async function boundedText(response) {
