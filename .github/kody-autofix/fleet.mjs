@@ -329,14 +329,11 @@ export function providerFrom(env) {
 }
 export function chatRequest(model, snapshot, modelBaseUrl = DEFAULT_MODEL_BASE_URL) {
   const isNativeMiniMax = modelBaseUrl === 'https://api.minimax.io/v1' && model.startsWith('MiniMax-');
-  const systemPrompt = isNativeMiniMax
-    ? `${SYSTEM_PROMPT}\n\nRequired response JSON Schema (follow exactly):\n${JSON.stringify(schema)}`
-    : SYSTEM_PROMPT;
   return {
     model, max_tokens: LIMITS.outputTokens, stream: false,
     ...(isNativeMiniMax ? { reasoning_split: true } : {}),
     messages: [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: JSON.stringify({ findings: snapshot.findings, files: snapshot.files.map(({path, content}) => ({path, content})) }) },
     ],
     response_format: { type: 'json_schema', json_schema: { name: 'kody_fix_edits', schema } },
