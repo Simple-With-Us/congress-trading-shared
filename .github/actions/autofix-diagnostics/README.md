@@ -25,7 +25,10 @@ all named MCP tools collapse to `mcp`, and unknown names to `other`.
 
 The output contract is a JSON object with `schema_version`, fixed
 `availability`, bounded `counts`, sanitized aggregate `result`, and at most
-500 `events`.  Result subtype is allowlisted; duration accepts nonnegative
+500 `events`.  Result subtype is allowlisted; `result.is_error` preserves a
+boolean failure flag independently of subtype, or null when absent/invalid.
+Error classification reads at most 8,192 characters from a string or the first
+128 array text blocks, then emits only a fixed category.  Duration accepts nonnegative
 safe integers capped at one day, and turn counts accept nonnegative safe
 integers capped at 1,000,000.  Per-tool timing is not available.  Action outputs are the
 sanitized `summary-path` and fixed `status`.  The caller must upload only the

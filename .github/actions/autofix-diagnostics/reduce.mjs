@@ -22,6 +22,19 @@ function safeErrorCategory(value) {
   return 'other';
 }
 
+function errorText(content) {
+  if (typeof content === 'string') return content.slice(0, 8192);
+  if (!Array.isArray(content)) return '';
+  let text = '';
+  for (const block of content.slice(0, 128)) {
+    if (block?.type !== 'text' || typeof block.text !== 'string') continue;
+    text += block.text.slice(0, 8192 - text.length);
+    if (text.length >= 8192) break;
+    text += '\n';
+  }
+  return text;
+}
+
 function knownSubtype(value) {
   return new Set(['success', 'error_max_turns', 'error_during_execution', 'error_max_budget_usd', 'error_max_structured_output_retries', 'error_max_tool_use_limit', 'error_max_output_tokens']).has(value) ? value : 'other';
 }
@@ -76,7 +89,7 @@ export function reduceTranscript(messages, result = {}) {
       } else if (type === 'user' && part.type === 'tool_result') {
         counts.tool_results = Math.min(MAX_COUNT, counts.tool_results + 1);
         const tool = typeof part.tool_use_id === 'string' ? toolIds.get(part.tool_use_id) : null;
-        const content = typeof part.content === 'string' ? part.content : '';
+        const content = errorText(part.content);
         const outputBytes = typeof part.content === 'string' ? Buffer.byteLength(part.content) : Array.isArray(part.content) ? Math.min(MAX_INPUT_BYTES, Buffer.byteLength(JSON.stringify(part.content))) : null;
         if (events.length < MAX_ROWS) events.push({ event_index: events.length, event_type: 'tool_result', assistant_message_index: null, tool_name: tool?.name ?? 'other', tool_category: tool?.category ?? 'other', is_error: part.is_error === true, error_category: part.is_error === true ? safeErrorCategory(content || true) : 'none', output_bytes: outputBytes });
       }
@@ -87,13 +100,13 @@ export function reduceTranscript(messages, result = {}) {
     schema_version: 1,
     availability: 'available',
     counts: { ...counts, event_rows: events.length, repeated_call_groups: repeatedGroups },
-    result: { subtype: knownSubtype(result.subtype), duration_ms: boundedInt(result.duration_ms, 86_400_000), num_turns: boundedInt(result.num_turns) },
+    result: { subtype: knownSubtype(result.subtype), is_error: typeof result.is_error === 'boolean' ? result.is_error : null, duration_ms: boundedInt(result.duration_ms, 86_400_000), num_turns: boundedInt(result.num_turns) },
     events,
   };
 }
 
 function unavailable(status) {
-  return { schema_version: 1, availability: status, counts: { assistant_messages: 0, user_messages: 0, tool_uses: 0, tool_results: 0, event_rows: 0, repeated_call_groups: 0 }, result: { subtype: 'other', duration_ms: null, num_turns: null }, events: [] };
+  return { schema_version: 1, availability: status, counts: { assistant_messages: 0, user_messages: 0, tool_uses: 0, tool_results: 0, event_rows: 0, repeated_call_groups: 0 }, result: { subtype: 'other', is_error: null, duration_ms: null, num_turns: null }, events: [] };
 }
 
 function appendActionOutput(value) {

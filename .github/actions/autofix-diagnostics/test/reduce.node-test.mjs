@@ -9,6 +9,32 @@ import { reduceTranscript } from '../reduce.mjs';
 
 const script = new URL('../reduce.mjs', import.meta.url).pathname;
 const SENTINEL = 'TOP_SECRET_SENTINEL_7f1a';
+
+test('preserves result failure separately from success subtype without coercing text', () => {
+  for (const [flag, expected] of [[true, true], [false, false], [undefined, null], [SENTINEL, null]]) {
+    const out = reduceTranscript([{ type: 'result', subtype: 'success', is_error: flag }]);
+    assert.equal(out.result.subtype, 'success');
+    assert.equal(out.result.is_error, expected);
+    assert(!JSON.stringify(out).includes(SENTINEL));
+  }
+});
+
+test('categorizes bounded array-form errors without retaining text or other blocks', () => {
+  for (const [text, expected] of [['permission denied', 'permission'], ['timed out', 'timeout']]) {
+    const out = reduceTranscript([{ type: 'user', message: { content: [{
+      type: 'tool_result', is_error: true,
+      content: [null, { type: 'image', data: SENTINEL }, { type: 'text', text: `${text} ${SENTINEL}` }],
+    }] } }]);
+    assert.equal(out.events[0].error_category, expected);
+    assert(!JSON.stringify(out).includes(SENTINEL));
+    assert(!JSON.stringify(out).includes(text));
+  }
+  const out = reduceTranscript([{ type: 'user', message: { content: [{
+    type: 'tool_result', is_error: true,
+    content: [{ type: 'text', text: 'x'.repeat(8192) }, { type: 'text', text: 'permission denied' }],
+  }] } }]);
+  assert.equal(out.events[0].error_category, 'other');
+});
 const walk = (value, visit) => {
   if (typeof value === 'string') visit(value);
   else if (Array.isArray(value)) value.forEach(v => walk(v, visit));
