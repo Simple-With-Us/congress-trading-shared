@@ -128,7 +128,9 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
+      - name: Run Claude Autofix
+        id: claude
+        uses: anthropics/claude-code-action@ed670b4cf9de2a5a570d130d2f6197b9e543cd64 # v1
         # Routed to MiniMax via its Anthropic-compatible endpoint:  claude-code-action
         # drives the Claude Code CLI, which honors ANTHROPIC_BASE_URL / _AUTH_TOKEN /
         # _MODEL, so this bills the org MINIMAX_API_KEY instead of Anthropic.  Same
@@ -146,9 +148,25 @@ jobs:
           allowed_bots: ${{ inputs.allowed_bots }}
           prompt: ${{ inputs.prompt }}
           claude_args: ${{ inputs.claude_args }}
+          # Keep raw SDK messages out of logs; retain only the bounded summary below.
+          show_full_output: "false"
           # claude-code-action's buffered-inline-comment classifier hardcodes
           # https://api.anthropic.com and reads anthropic_api_key directly,
           # ignoring ANTHROPIC_BASE_URL - with a MiniMax key it would 401 and
           # fall back to posting every buffered comment unfiltered. Disable the
           # feature rather than rely on a classifier that can't authenticate.
           classify_inline_comments: "false"
+
+      - name: Summarize Autofix Diagnostics
+        if: ${{ always() }}
+        id: diagnostics
+        uses: Simple-With-Us/congress-trading-shared/.github/actions/autofix-diagnostics@ab884c9fc405d42891a2420b80c211b79a7b66f9
+
+      - name: Retain Sanitized Autofix Diagnostics
+        if: ${{ always() && steps.diagnostics.outputs.summary-path != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: claude-autofix-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.diagnostics.outputs.summary-path }}
+          if-no-files-found: error
+          retention-days: 7
