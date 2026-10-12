@@ -468,6 +468,9 @@ test('chat request is tool-free, bounded, schema-shaped, and carries only approv
   assert.equal(body.tools, undefined); assert.equal(body.tool_choice, undefined);
   assert.equal(body.messages[0].content, SYSTEM_PROMPT);
   assert(SYSTEM_PROMPT.includes(JSON.stringify(schema)));
+  assert.match(SYSTEM_PROMPT, /JSON INSTANCE as your answer, never a JSON Schema/);
+  assert.match(SYSTEM_PROMPT, /\{"edits":\[\{"path":"<source path>","old_text":"<exact existing source text>","new_text":"<replacement source text>"\}\]\}/);
+  assert.match(SYSTEM_PROMPT, /top-level object must have only the key "edits"; do not return schema-definition keys such as "type", "properties", or "required"/);
   assert.deepEqual(JSON.parse(body.messages[1].content), { findings: data.findings, files: data.files.map(({ path, content }) => ({ path, content })) });
   assert.equal(body.response_format, undefined);
   const gatewayRequest = chatRequest(MODEL, data, 'https://ai-gateway.vercel.sh/v1');
