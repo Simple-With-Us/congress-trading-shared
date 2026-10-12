@@ -445,14 +445,15 @@ test('late concurrent source push prevents branch creation without force or roll
   assert.deepEqual(f.writes.map(w => w.path), ['git/trees', 'git/commits']);
 });
 test('provider configuration accepts only reviewed endpoints and strict model identifiers', () => {
-  assert.equal(MODEL, 'minimax/minimax-m3');
-  assert.deepEqual(providerFrom({}), { url: 'https://ai-gateway.vercel.sh/v1/chat/completions', model: MODEL });
+  assert.equal(MODEL, 'MiniMax-M3');
+  assert.deepEqual(providerFrom({}), { url: 'https://api.minimax.io/v1/chat/completions', model: MODEL });
   assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://api.meta.ai/v1', KODY_MODEL: 'muse-spark-1.3-contributor' }),
     { url: 'https://api.meta.ai/v1/chat/completions', model: 'muse-spark-1.3-contributor' });
   assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://api.minimax.io/v1', KODY_MODEL: 'MiniMax-M3' }),
     { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3' });
-  assert.equal(providerFrom({ KODY_MODEL: 'minimax/minimax-m3' }).model, 'minimax/minimax-m3');
-  assert.deepEqual([...MODEL_BASE_URLS], ['https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1', 'https://api.minimax.io/v1']);
+  assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://ai-gateway.vercel.sh/v1', KODY_MODEL: 'minimax/minimax-m3' }),
+    { url: 'https://ai-gateway.vercel.sh/v1/chat/completions', model: 'minimax/minimax-m3' });
+  assert.deepEqual([...MODEL_BASE_URLS], ['https://api.minimax.io/v1', 'https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1']);
   for (const url of ['https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/',
     'https://ai-gateway.vercel.sh.evil.example/v1', 'https://user@ai-gateway.vercel.sh/v1', 'https://api.deepseek.com/anthropic'])
     assert.throws(() => providerFrom({ KODY_MODEL_BASE_URL: url }), /base URL/);
@@ -461,8 +462,9 @@ test('provider configuration accepts only reviewed endpoints and strict model id
 });
 test('chat request is tool-free, bounded, schema-shaped, and carries only approved source', () => {
   const data = packageData(); const body = chatRequest(MODEL, data);
-  assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'response_format', 'stream']);
+  assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'reasoning_split', 'response_format', 'stream']);
   assert.equal(body.max_tokens, LIMITS.outputTokens); assert.equal(body.stream, false);
+  assert.equal(body.reasoning_split, true);
   assert.equal(body.tools, undefined); assert.equal(body.tool_choice, undefined);
   assert.equal(body.messages[0].content, SYSTEM_PROMPT);
   assert.deepEqual(JSON.parse(body.messages[1].content), { findings: data.findings, files: data.files.map(({ path, content }) => ({ path, content })) });
@@ -577,11 +579,12 @@ test('secret-looking source and malicious scoped patches fail before scanner exe
 
 const provider = { url: 'https://ai-gateway.vercel.sh/v1/chat/completions', model: MODEL };
 const completion = (content, extra = {}) => new Response(JSON.stringify({ model: MODEL,
+  base_resp: { status_code: 0, status_msg: 'success' },
   choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content } }], ...extra }),
 { headers: { 'content-type': 'application/json' } });
 test('provider request is one bounded call with the key only in its authorization header', async () => {
   const calls = []; const edits = answer();
-  const result = await requestEdits('fixture-only', provider, chatRequest(MODEL, packageData()), async (url, options) => {
+  const result = await requestEdits('fixture-only', provider, chatRequest(MODEL, packageData(), 'https://ai-gateway.vercel.sh/v1'), async (url, options) => {
     calls.push({ url, options }); return completion(JSON.stringify(edits));
   });
   assert.deepEqual(result, edits); assert.equal(calls.length, 1); assert.equal(LIMITS.requests, 1);
@@ -595,7 +598,7 @@ test('provider request is one bounded call with the key only in its authorizatio
 });
 test('native MiniMax requests split reasoning and validate base_resp before parsing edits', async () => {
   const minimax = { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3' };
-  const request = chatRequest(minimax.model, packageData());
+  const request = chatRequest(minimax.model, packageData(), 'https://api.minimax.io/v1');
   assert.equal(request.reasoning_split, true);
   const edits = answer(); const reports = [];
   const success = completion(JSON.stringify(edits), { model: minimax.model,
@@ -644,14 +647,14 @@ test('native MiniMax requests split reasoning and validate base_resp before pars
 });
 test('missing key and oversized requests are refused before any provider call', async () => {
   let calls = 0; const fetcher = async () => { calls++; return completion('{}'); };
-  await assert.rejects(requestEdits('', provider, chatRequest(MODEL, packageData()), fetcher), /MODEL_API_KEY/);
+  await assert.rejects(requestEdits('', provider, chatRequest(MODEL, packageData(), 'https://ai-gateway.vercel.sh/v1'), fetcher), /MODEL_API_KEY/);
   await assert.rejects(requestEdits('fixture-only', provider, { model: MODEL, padding: 'x'.repeat(LIMITS.requestBytes) }, fetcher), /bound/);
   assert.equal(calls, 0);
 });
 test('credential, payment, permission, and quota refusals report status only without raw error disclosure', async () => {
   for (const status of [401, 402, 403, 429]) {
     let calls = 0; const reports = [];
-    await assert.rejects(requestEdits('fixture-provider-secret', provider, chatRequest(MODEL, packageData()), async () => {
+    await assert.rejects(requestEdits('fixture-provider-secret', provider, chatRequest(MODEL, packageData(), 'https://ai-gateway.vercel.sh/v1'), async () => {
       calls++; return new Response('sensitive upstream error', { status });
     }, report => reports.push(report)), error => !error.message.includes('sensitive') && !error.message.includes('fixture-provider-secret'));
     assert.equal(calls, 1); assert.equal(reports.length, 1);
@@ -659,13 +662,13 @@ test('credential, payment, permission, and quota refusals report status only wit
     assert(!reports[0].includes('fixture-provider-secret')); assert(!reports[0].includes('sensitive upstream error'));
   }
   const reports = [];
-  await assert.rejects(requestEdits('fixture-only', provider, chatRequest(MODEL, packageData()),
+  await assert.rejects(requestEdits('fixture-only', provider, chatRequest(MODEL, packageData(), 'https://ai-gateway.vercel.sh/v1'),
     async () => new Response('server detail', { status: 500 }), report => reports.push(report)), /no proposal/);
   assert.equal(reports.length, 0);
 });
 test('expired or revoked approval at request time prevents even a mocked provider call', async () => {
   let calls = 0;
-  await assert.rejects(requestEdits('fixture-only', provider, chatRequest(MODEL, packageData()),
+  await assert.rejects(requestEdits('fixture-only', provider, chatRequest(MODEL, packageData(), 'https://ai-gateway.vercel.sh/v1'),
     async () => { calls++; return completion('{}'); }, () => {}, () => { throw new Error('Approval expired.'); }), /expired/);
   assert.equal(calls, 0);
 });
@@ -679,7 +682,7 @@ test('empty, truncated, multi-choice, non-JSON, and oversized provider answers a
     new Response('x'.repeat(LIMITS.outputBytes + 1)),
   ];
   for (const response of cases)
-    await assert.rejects(requestEdits('fixture-only', provider, chatRequest(MODEL, packageData()), async () => response));
+    await assert.rejects(requestEdits('fixture-only', provider, chatRequest(MODEL, packageData(), 'https://ai-gateway.vercel.sh/v1'), async () => response));
 });
 test('generation writes only a validated answer and never sends GitHub or unrelated credentials', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'fleet-offline-generate-'));

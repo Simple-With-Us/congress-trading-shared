@@ -2,8 +2,8 @@ name: Kody MiniMax M3 Fix Proposals (Reusable)
 
 # Separate from the legacy Codex autofix workflow.  No secrets are inherited.
 # The trusted helper is independently pinned to its immutable publication commit.
-# Provider: MiniMax M3 via Vercel AI Gateway chat completions (owner 2026-10-11).
-# Callers forward MODEL_API_KEY explicitly, today from the org secret VERCEL_AI_GATEWAY_API_KEY.
+# Provider: MiniMax M3 through MiniMax's OpenAI-compatible chat completions (owner 2026-10-11).
+# Callers forward MODEL_API_KEY explicitly from the provider-specific organization secret.
 on:
   workflow_call:
     inputs:
@@ -33,12 +33,12 @@ on:
         description: Provider model identifier; the helper rejects anything outside its strict pattern
         required: false
         type: string
-        default: minimax/minimax-m3
+        default: MiniMax-M3
       model_base_url:
         description: OpenAI-compatible base URL; the helper accepts only its reviewed allowlist
         required: false
         type: string
-        default: https://ai-gateway.vercel.sh/v1
+        default: https://api.minimax.io/v1
     secrets:
       MODEL_API_KEY:
         description: Provider key for model_base_url, forwarded explicitly by the caller
@@ -84,7 +84,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Simple-With-Us/congress-trading-shared
-          ref: '4dd0ab2ec91a9dace9f73fd625661cdc3bccb0b4'
+          ref: '97c4e1e3f7f0a3a3758c0450d077cfc0423412b6'
           path: trusted-helper
           persist-credentials: false
           sparse-checkout: .github/kody-autofix
@@ -132,7 +132,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Simple-With-Us/congress-trading-shared
-          ref: '4dd0ab2ec91a9dace9f73fd625661cdc3bccb0b4'
+          ref: '97c4e1e3f7f0a3a3758c0450d077cfc0423412b6'
           path: trusted-helper
           persist-credentials: false
           sparse-checkout: .github/kody-autofix
@@ -173,7 +173,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Simple-With-Us/congress-trading-shared
-          ref: '4dd0ab2ec91a9dace9f73fd625661cdc3bccb0b4'
+          ref: '97c4e1e3f7f0a3a3758c0450d077cfc0423412b6'
           path: trusted-helper
           persist-credentials: false
           sparse-checkout: .github/kody-autofix
@@ -246,7 +246,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Simple-With-Us/congress-trading-shared
-          ref: '4dd0ab2ec91a9dace9f73fd625661cdc3bccb0b4'
+          ref: '97c4e1e3f7f0a3a3758c0450d077cfc0423412b6'
           path: trusted-helper
           persist-credentials: false
           sparse-checkout: .github/kody-autofix

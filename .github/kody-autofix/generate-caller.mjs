@@ -12,9 +12,9 @@ const POLICY = /^(?:pending|approved-[A-Za-z0-9_-]{1,64})$/;
 const OPTIONS = new Set(['repository-id', 'profile', 'source-prefixes', 'shared-sha',
   'daily-attempt-limit', 'budget-policy-id', 'model', 'model-base-url']);
 // Kept identical to fleet.mjs (asserted by the tests) so this generator runs without npm dependencies.
-export const DEFAULT_MODEL = 'minimax/minimax-m3';
-export const DEFAULT_MODEL_BASE_URL = 'https://ai-gateway.vercel.sh/v1';
-export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://api.meta.ai/v1', 'https://api.minimax.io/v1']);
+export const DEFAULT_MODEL = 'MiniMax-M3';
+export const DEFAULT_MODEL_BASE_URL = 'https://api.minimax.io/v1';
+export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1']);
 export const MODEL_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9-]{0,31}\/)?[A-Za-z0-9][A-Za-z0-9.-]{0,63}$/;
 
 // Single-quoted YAML scalars also safely preserve JSON's quotes and backslashes.
@@ -84,7 +84,8 @@ export function validateOptions(options) {
   const modelBaseUrl = options['model-base-url'] ?? DEFAULT_MODEL_BASE_URL;
   assert(MODEL_BASE_URLS.includes(modelBaseUrl), `Model base URL must be one of: ${MODEL_BASE_URLS.join(', ')}.`);
   return { repositoryId: options['repository-id'], profile: options.profile, prefixes,
-    sharedSha: options['shared-sha'], limit, policy, model, modelBaseUrl };
+    sharedSha: options['shared-sha'], limit, policy, model, modelBaseUrl,
+    apiKeySecret: modelBaseUrl === 'https://api.minimax.io/v1' ? 'MINIMAX_API_KEY' : 'VERCEL_AI_GATEWAY_API_KEY' };
 }
 
 export function generateCaller(options) {
@@ -132,7 +133,7 @@ jobs:
       model: ${yamlString(config.model)}
       model_base_url: ${yamlString(config.modelBaseUrl)}
     secrets:
-      MODEL_API_KEY: \${{ secrets.VERCEL_AI_GATEWAY_API_KEY }}
+      MODEL_API_KEY: \${{ secrets.${config.apiKeySecret} }}
 `;
 }
 

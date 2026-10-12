@@ -28,10 +28,10 @@ export const LIMITS = Object.freeze({ files: 5, findings: 8, fileBytes: 64_000, 
   edits: 12, replacementBytes: 24_000, outputBytes: 180_000, requests: 1, requestBytes: 256_000,
   outputTokens: 16_384, modelMs: 240_000 });
 export const KODY = Object.freeze({ login: 'kody-ai', id: 'BOT_kgDOCN-7SQ' });
-// MiniMax M3 through Vercel AI Gateway's OpenAI-compatible chat completions (owner 2026-10-11).
-export const MODEL = 'minimax/minimax-m3';
-export const DEFAULT_MODEL_BASE_URL = 'https://ai-gateway.vercel.sh/v1';
-export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://api.meta.ai/v1', 'https://api.minimax.io/v1']);
+// MiniMax M3 through MiniMax's OpenAI-compatible chat completions (owner 2026-10-11).
+export const MODEL = 'MiniMax-M3';
+export const DEFAULT_MODEL_BASE_URL = 'https://api.minimax.io/v1';
+export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1']);
 export const MODEL_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9-]{0,31}\/)?[A-Za-z0-9][A-Za-z0-9.-]{0,63}$/;
 const shaPattern = /^[a-f0-9]{40}$/;
 const digest = (text) => createHash('sha256').update(text).digest('hex');
@@ -325,10 +325,11 @@ export function providerFrom(env) {
   assert(typeof model === 'string' && MODEL_PATTERN.test(model), 'Unsupported model identifier.');
   return { url: `${baseUrl}/chat/completions`, model };
 }
-export function chatRequest(model, snapshot) {
+export function chatRequest(model, snapshot, modelBaseUrl = DEFAULT_MODEL_BASE_URL) {
+  const isNativeMiniMax = modelBaseUrl === 'https://api.minimax.io/v1' && model.startsWith('MiniMax-');
   return {
     model, max_tokens: LIMITS.outputTokens, stream: false,
-    ...(model.startsWith('MiniMax-') ? { reasoning_split: true } : {}),
+    ...(isNativeMiniMax ? { reasoning_split: true } : {}),
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: JSON.stringify({ findings: snapshot.findings, files: snapshot.files.map(({path, content}) => ({path, content})) }) },
@@ -397,7 +398,8 @@ export async function generate(snapshot, outputPath, env, reservation, scanRecei
   validateScan(scanReceipt,snapshot);
   const provider = providerFrom(env);
   assert(env.MODEL_API_KEY, 'MODEL_API_KEY is missing; activation is incomplete.');
-  const answer = await requestEdits(env.MODEL_API_KEY, provider, chatRequest(provider.model, snapshot), fetcher, console.error,
+  const modelBaseUrl = env.KODY_MODEL_BASE_URL || DEFAULT_MODEL_BASE_URL;
+  const answer = await requestEdits(env.MODEL_API_KEY, provider, chatRequest(provider.model, snapshot, modelBaseUrl), fetcher, console.error,
     () => { validateReservation(reservation,snapshot,env); validateScan(scanReceipt,snapshot); });
   applyEdits(snapshot, answer);
   const text = JSON.stringify(answer);

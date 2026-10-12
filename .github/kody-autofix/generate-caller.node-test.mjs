@@ -34,12 +34,12 @@ test('offline caller defaults to no paid attempts and no implicit enablement', (
   assert.match(caller, /repository_id: '123456789'\n/);
   assert.match(caller, /source_prefixes: '\["src\/","server\/"\]'\n/);
   // The provider key is forwarded explicitly and only once; secrets are never inherited.
-  assert(caller.endsWith("    secrets:\n      MODEL_API_KEY: ${{ secrets.VERCEL_AI_GATEWAY_API_KEY }}\n"));
+  assert(caller.endsWith("    secrets:\n      MODEL_API_KEY: ${{ secrets.MINIMAX_API_KEY }}\n"));
   assert.equal((caller.match(/secrets\./g) ?? []).length, 1);
   assert(!caller.includes('secrets: inherit'));
   assert.match(caller, /^name: Kody MiniMax M3 Fix Proposals$/m);
-  assert.match(caller, /model: 'minimax\/minimax-m3'\n/);
-  assert.match(caller, /model_base_url: 'https:\/\/ai-gateway\.vercel\.sh\/v1'\n/);
+  assert.match(caller, /model: 'MiniMax-M3'\n/);
+  assert.match(caller, /model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
   assert(!caller.includes('workflow_dispatch'));
   assert(!caller.includes('pull_request_review:'));
   assert(!caller.includes('issue_comment:'));
@@ -245,11 +245,16 @@ test('provider model and endpoint options are validated and match the helper all
   assert.equal(DEFAULT_MODEL_BASE_URL, fleet.DEFAULT_MODEL_BASE_URL);
   assert.deepEqual([...MODEL_BASE_URLS], [...fleet.MODEL_BASE_URLS]);
   assert.equal(String(MODEL_PATTERN), String(fleet.MODEL_PATTERN));
-  assert.match(yaml, /      model:\n[\s\S]*?default: minimax\/minimax-m3\n/);
-  assert.match(yaml, /      model_base_url:\n[\s\S]*?default: https:\/\/ai-gateway\.vercel\.sh\/v1\n/);
+  assert.match(yaml, /      model:\n[\s\S]*?default: MiniMax-M3\n/);
+  assert.match(yaml, /      model_base_url:\n[\s\S]*?default: https:\/\/api\.minimax\.io\/v1\n/);
+  assert.equal([...yaml.matchAll(/ref: '97c4e1e3f7f0a3a3758c0450d077cfc0423412b6'/g)].length, 4);
   const native = generateCaller(valid({ model: 'muse-spark-1.3-contributor', 'model-base-url': 'https://api.meta.ai/v1' }));
   assert.match(native, /model: 'muse-spark-1\.3-contributor'\n      model_base_url: 'https:\/\/api\.meta\.ai\/v1'\n/);
-  assert.match(generateCaller(valid({ model: 'minimax/minimax-m3' })), /model: 'minimax\/minimax-m3'\n/);
+  const oldGateway = generateCaller(valid({ model: 'minimax/minimax-m3', 'model-base-url': 'https://ai-gateway.vercel.sh/v1' }));
+  assert.match(oldGateway, /model: 'minimax\/minimax-m3'\n      model_base_url: 'https:\/\/ai-gateway\.vercel\.sh\/v1'\n/);
+  assert.match(oldGateway, /MODEL_API_KEY: \$\{\{ secrets\.VERCEL_AI_GATEWAY_API_KEY \}\}/);
+  const oldMeta = generateCaller(valid({ model: 'muse-spark-1.3-contributor', 'model-base-url': 'https://api.meta.ai/v1' }));
+  assert.match(oldMeta, /MODEL_API_KEY: \$\{\{ secrets\.VERCEL_AI_GATEWAY_API_KEY \}\}/);
   for (const model of ['', '../x', 'a/b/c', "x'y", '${{ secrets.KEY }}', 'x\nsecrets: inherit'])
     assert.throws(() => validateOptions(valid({ model })), /Model/);
   assert.equal(validateOptions(valid({ model: 'MiniMax-M3' })).model, 'MiniMax-M3');
