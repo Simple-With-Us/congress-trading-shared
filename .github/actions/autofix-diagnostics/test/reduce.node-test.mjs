@@ -78,6 +78,8 @@ test('classifies only bounded leading commands and propagates paired errors', ()
     ['npm run build', 'build'], ['npm run lint', 'lint'], ['rg --files', 'file_discovery'],
     ['sed -n 1,20p file', 'file_read'], ['sed -i s/a/b/ file', 'file_write'], ['mkdir output', 'file_write'],
     ['sed --in-place s/a/b/ file', 'file_write'], ['sed --in-place=.bak s/a/b/ file', 'file_write'],
+    ['sed -Ei s/a/b/ file', 'file_write'], ['sed -ni.bak s/a/b/ file', 'file_write'],
+    ['find . -name tmp', 'file_discovery'], ['find tmp -delete', 'file_write'], ['find . -exec rm tmp {} +', 'file_write'],
     ['git remote add origin private', 'shell_other'], ['npx playwright install', 'shell_other'],
     [`echo "git status ${SENTINEL}"`, 'shell_other'],
     [`bash -lc 'git push ${SENTINEL}'`, 'shell_other'],
