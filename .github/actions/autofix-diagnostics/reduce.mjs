@@ -22,7 +22,7 @@ function shellOperation(input) {
   if (!/^[a-z][a-z0-9-]*$/.test(executable)) return 'shell_other';
   if (executable === 'git') {
     if (['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files'].includes(second)) return 'git_inspect';
-    if (second === 'branch' && ['', '-a', '-r', '-v', '--list'].includes(third)) return 'git_inspect';
+    if (second === 'branch' && ['', '-a', '-r', '-v', '--list', '--show-current', '--contains', '--merged', '--no-merged', '--points-at'].includes(third)) return 'git_inspect';
     if (['branch', 'checkout', 'switch', 'fetch', 'pull', 'merge', 'rebase'].includes(second)) return 'git_branch_update';
     if (['add', 'commit', 'push'].includes(second)) return 'git_commit_push';
   }
@@ -39,7 +39,7 @@ function shellOperation(input) {
   }
   if ((executable === 'npx' && (['vitest', 'jest'].includes(second) || second === 'playwright' && third === 'test')) || executable === 'pytest' || (['go', 'cargo'].includes(executable) && second === 'test')) return 'test';
   if (['rg', 'find', 'fd', 'ls'].includes(executable)) return 'file_discovery';
-  if (executable === 'sed' && /(?:^|\s)(?:-i\S*|--in-place)(?:\s|$)/.test(command)) return 'file_write';
+  if (executable === 'sed' && /(?:^|\s)(?:-i\S*|--in-place(?:=\S*)?)(?:\s|$)/.test(command)) return 'file_write';
   if (['cat', 'sed', 'head', 'tail'].includes(executable)) return 'file_read';
   if (['touch', 'mkdir', 'cp', 'mv', 'rm'].includes(executable)) return 'file_write';
   return 'shell_other';

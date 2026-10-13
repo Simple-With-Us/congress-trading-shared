@@ -63,11 +63,14 @@ test('whitelists transcript values and keeps secret sentinels out of every outpu
 test('classifies only bounded leading commands and propagates paired errors', () => {
   const examples = [
     ['git status --short', 'git_inspect'], ['git branch -a', 'git_inspect'], ['git switch main', 'git_branch_update'],
+    ['git branch --show-current', 'git_inspect'], ['git branch --contains HEAD', 'git_inspect'],
+    ['git branch --merged', 'git_inspect'], ['git branch -d old', 'git_branch_update'],
     [`git commit -m "${SENTINEL}"`, 'git_commit_push'], ['git push origin branch', 'git_commit_push'],
     ['gh pr checks 42', 'github_review_read'], ['gh pr review 42 --approve', 'github_review_write'],
     ['npm ci', 'dependency_install'], ['npm test', 'test'], ['npm run typecheck', 'typecheck'],
     ['npm run build', 'build'], ['npm run lint', 'lint'], ['rg --files', 'file_discovery'],
     ['sed -n 1,20p file', 'file_read'], ['sed -i s/a/b/ file', 'file_write'], ['mkdir output', 'file_write'],
+    ['sed --in-place s/a/b/ file', 'file_write'], ['sed --in-place=.bak s/a/b/ file', 'file_write'],
     ['git remote add origin private', 'shell_other'], ['npx playwright install', 'shell_other'],
     [`echo "git status ${SENTINEL}"`, 'shell_other'],
     [`bash -lc 'git push ${SENTINEL}'`, 'shell_other'],
