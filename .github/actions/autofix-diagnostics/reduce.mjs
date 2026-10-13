@@ -47,8 +47,7 @@ function shellOperation(input) {
     if (second === 'run' && /^lint(?::[a-z0-9-]+)?$/.test(third)) return 'lint';
   }
   if ((executable === 'npx' && (['vitest', 'jest'].includes(second) || second === 'playwright' && third === 'test')) || executable === 'pytest' || (['go', 'cargo'].includes(executable) && second === 'test')) return 'test';
-  // find/fd can run arbitrary actions and sed scripts can write files without -i.
-  // Leave these ambiguous programs unclassified instead of inferring read-only behavior.
+  // find/fd can run arbitrary actions and sed scripts can write files without -i.  Leave these ambiguous programs unclassified instead of inferring read-only behavior.
   if (['find', 'fd', 'sed'].includes(executable)) return 'shell_other';
   if (['rg', 'ls'].includes(executable)) return 'file_discovery';
   if (['cat', 'head', 'tail'].includes(executable)) return 'file_read';
