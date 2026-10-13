@@ -22,7 +22,8 @@ function shellOperation(input) {
   const [executable = '', second = '', third = '', fourth = ''] = words;
   if (!/^[a-z][a-z0-9-]*$/.test(executable)) return 'shell_other';
   if (executable === 'git') {
-    if (['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files'].includes(second)) return 'git_inspect';
+    // Git --output=<file> writes results to a file instead of stdout, so these subcommands are not read-only.
+    if (['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files'].includes(second)) return words.some(word => word === '--output' || word.startsWith('--output=')) ? 'file_write' : 'git_inspect';
     // Branch flags compose into both reads and mutations.  Recognize only narrow, unambiguous forms.
     if (second === 'branch') {
       if (words.length === 2 || words.length === 3 && ['-a', '-r', '-v', '-vv', '--list', '--show-current', '--contains', '--merged', '--no-merged', '--points-at'].includes(third)) return 'git_inspect';
@@ -49,8 +50,8 @@ function shellOperation(input) {
   if ((executable === 'npx' && (['vitest', 'jest'].includes(second) || second === 'playwright' && third === 'test')) || executable === 'pytest' || (['go', 'cargo'].includes(executable) && second === 'test')) return 'test';
   // find/fd can run arbitrary actions and sed scripts can write files without -i.  Leave these ambiguous programs unclassified instead of inferring read-only behavior.
   if (['find', 'fd', 'sed'].includes(executable)) return 'shell_other';
-  // rg --pre spawns its COMMAND against every searched path, so a preprocessor can mutate files.  Plain searches stay discovery.
-  if (executable === 'rg' && words.some(word => word === '--pre' || word.startsWith('--pre='))) return 'shell_other';
+  // rg --pre spawns its COMMAND against every searched path and --hostname-bin spawns a helper, so either can mutate files.  Plain searches stay discovery.
+  if (executable === 'rg' && words.some(word => ['--pre', '--hostname-bin'].includes(word) || word.startsWith('--pre=') || word.startsWith('--hostname-bin='))) return 'shell_other';
   if (['rg', 'ls'].includes(executable)) return 'file_discovery';
   if (['cat', 'head', 'tail'].includes(executable)) return 'file_read';
   if (['touch', 'mkdir', 'cp', 'mv', 'rm'].includes(executable)) return 'file_write';
