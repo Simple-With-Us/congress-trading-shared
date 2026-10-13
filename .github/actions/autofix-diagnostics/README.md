@@ -13,11 +13,9 @@ unsafe, malformed, oversized, and write-failure cases produce fixed
 availability codes.  No prompts, text, inputs, outputs, paths, tool IDs,
 model strings, or raw exceptions are emitted.
 
-Each assistant SDK message receives a zero-based `assistant_message_index`.
-This is a transcript message index, not an SDK turn index.  Tool result events
+Each assistant SDK message receives a zero-based `assistant_message_index`.  This is a transcript message index, not an SDK turn index.  Tool result events
 have a null assistant message index because their SDK message is a user
-message.  Event indexes are zero-based across tool-use and tool-result events.
-Repeated call groups are assigned in first-seen order using the original tool
+message.  Event indexes are zero-based across tool-use and tool-result events.  Repeated call groups are assigned in first-seen order using the original tool
 name, sanitized category, and bounded serialized input, only in memory;
 signatures and original tool names are never written.  Opaque or large inputs
 each form their own group.  Only a fixed builtin tool allowlist is retained;
@@ -32,11 +30,9 @@ including `other` for unpaired results.  Builtin Read, Write, Edit, Glob, and
 Grep tools receive fixed categories; every Bash call is `shell_other` without
 inspecting its command.  Other fixed category keys remain in the schema for
 compatibility, but do not imply that shell purposes or file mutations are
-known.  Repeated calls can be useful and do not prove semantic duplication.
-No command text, arguments, paths, custom scripts, prompts, or results are
+known.  Repeated calls can be useful and do not prove semantic duplication.  No command text, arguments, paths, custom scripts, prompts, or results are
 emitted.  Result subtype is allowlisted;  `result.is_error` preserves a boolean
-failure flag independently of subtype, or null when absent/invalid.
-Error classification reads at most 8,192 characters from a string or the first
+failure flag independently of subtype, or null when absent/invalid.  Error classification reads at most 8,192 characters from a string or the first
 128 array text blocks, then emits only a fixed category.  Duration accepts nonnegative
 safe integers capped at one day, and turn counts accept nonnegative safe
 integers capped at 1,000,000.  Per-tool timing is not available.  Action outputs are the
