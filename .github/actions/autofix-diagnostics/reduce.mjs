@@ -49,6 +49,8 @@ function shellOperation(input) {
   if ((executable === 'npx' && (['vitest', 'jest'].includes(second) || second === 'playwright' && third === 'test')) || executable === 'pytest' || (['go', 'cargo'].includes(executable) && second === 'test')) return 'test';
   // find/fd can run arbitrary actions and sed scripts can write files without -i.  Leave these ambiguous programs unclassified instead of inferring read-only behavior.
   if (['find', 'fd', 'sed'].includes(executable)) return 'shell_other';
+  // rg --pre spawns its COMMAND against every searched path, so a preprocessor can mutate files.  Plain searches stay discovery.
+  if (executable === 'rg' && words.some(word => word === '--pre' || word.startsWith('--pre='))) return 'shell_other';
   if (['rg', 'ls'].includes(executable)) return 'file_discovery';
   if (['cat', 'head', 'tail'].includes(executable)) return 'file_read';
   if (['touch', 'mkdir', 'cp', 'mv', 'rm'].includes(executable)) return 'file_write';

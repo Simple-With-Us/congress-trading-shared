@@ -81,6 +81,7 @@ test('classifies only bounded leading commands and propagates paired errors', ()
     ['sed -Ei s/a/b/ file', 'shell_other'], ['sed -ni.bak s/a/b/ file', 'shell_other'],
     ['sed -n woutput file', 'shell_other'], ['find . -fprint output', 'shell_other'], ['fd -x cat', 'shell_other'], ['find . -name tmp', 'shell_other'], ['find tmp -delete', 'shell_other'], ['find . -exec rm tmp {} +', 'shell_other'],
     ['git remote add origin private', 'shell_other'], ['npx playwright install', 'shell_other'],
+    ['rg --pre=rm pattern .', 'shell_other'], ['rg --pre gzip pattern .', 'shell_other'], ['rg -l pattern .', 'file_discovery'],
     [`echo "git status ${SENTINEL}"`, 'shell_other'],
     [`bash -lc 'git push ${SENTINEL}'`, 'shell_other'],
     [`git status && git push ${SENTINEL}`, 'shell_other'],
