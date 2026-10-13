@@ -33,12 +33,9 @@ branch updates, commit/push, GitHub PR discovery and mutation, dependency
 installation, test/typecheck/build/lint, file discovery/read/write, and fixed
 shell/web/agent/utility/MCP/other fallbacks.  Bash classification inspects at
 most 8,192 characters of `input.command` in memory and recognizes only simple
-leading commands; complex or oversized commands fall back to `shell_other`.
-This heuristic is incomplete and does not detect semantic duplicate work.
-Repeated calls can be useful.  No command text, arguments, paths, custom
+leading commands; complex or oversized commands fall back to `shell_other`.  This heuristic is incomplete and does not detect semantic duplicate work.  Repeated calls can be useful.  No command text, arguments, paths, custom
 scripts, prompts, or results are emitted.  Result subtype is allowlisted;
-`result.is_error` preserves a
-boolean failure flag independently of subtype, or null when absent/invalid.
+`result.is_error` preserves a boolean failure flag independently of subtype, or null when absent/invalid.
 Error classification reads at most 8,192 characters from a string or the first
 128 array text blocks, then emits only a fixed category.  Duration accepts nonnegative
 safe integers capped at one day, and turn counts accept nonnegative safe
