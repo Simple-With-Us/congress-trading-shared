@@ -47,12 +47,11 @@ function shellOperation(input) {
     if (second === 'run' && /^lint(?::[a-z0-9-]+)?$/.test(third)) return 'lint';
   }
   if ((executable === 'npx' && (['vitest', 'jest'].includes(second) || second === 'playwright' && third === 'test')) || executable === 'pytest' || (['go', 'cargo'].includes(executable) && second === 'test')) return 'test';
-  // find actions delete or replace matched files, so they mutate rather than discover.
-  if (executable === 'find' && /(?:^|\s)-(?:delete|exec|execdir|ok)(?:\s|$)/.test(command)) return 'file_write';
-  if (['rg', 'find', 'fd', 'ls'].includes(executable)) return 'file_discovery';
-  // Short options cluster, so an in-place flag may follow others (`-Ei`, `-ni.bak`).
-  if (executable === 'sed' && /(?:^|\s)(?:-(?=[a-z]*i)[a-z]+\S*|--in-place(?:=\S*)?)(?:\s|$)/i.test(command)) return 'file_write';
-  if (['cat', 'sed', 'head', 'tail'].includes(executable)) return 'file_read';
+  // find/fd can run arbitrary actions and sed scripts can write files without -i.
+  // Leave these ambiguous programs unclassified instead of inferring read-only behavior.
+  if (['find', 'fd', 'sed'].includes(executable)) return 'shell_other';
+  if (['rg', 'ls'].includes(executable)) return 'file_discovery';
+  if (['cat', 'head', 'tail'].includes(executable)) return 'file_read';
   if (['touch', 'mkdir', 'cp', 'mv', 'rm'].includes(executable)) return 'file_write';
   return 'shell_other';
 }
