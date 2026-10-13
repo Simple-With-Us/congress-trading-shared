@@ -160,7 +160,7 @@ jobs:
       - name: Summarize Autofix Diagnostics
         if: ${{ always() }}
         id: diagnostics
-        uses: Simple-With-Us/congress-trading-shared/.github/actions/autofix-diagnostics@d59fac951d772b51b72831da68a52dfd01d75b6b
+        uses: Simple-With-Us/congress-trading-shared/.github/actions/autofix-diagnostics@1fb0020b9d066e3fb3468e269c4df5f5237a658d
 
       - name: Retain Sanitized Autofix Diagnostics
         if: ${{ always() && steps.diagnostics.outputs.summary-path != '' }}
