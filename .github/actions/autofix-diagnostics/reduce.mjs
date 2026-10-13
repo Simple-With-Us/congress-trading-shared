@@ -18,11 +18,16 @@ function emptyOperations() {
 function shellOperation(input) {
   const command = input?.command;
   if (typeof command !== 'string' || command.length > MAX_COMMAND_CHARS || /[\r\n;|&`\\<>$]/.test(command)) return 'shell_other';
-  const [executable = '', second = '', third = ''] = command.trim().split(/\s+/, 3).map(word => word.toLowerCase());
+  const words = command.trim().split(/\s+/).map(word => word.toLowerCase());
+  const [executable = '', second = '', third = '', fourth = ''] = words;
   if (!/^[a-z][a-z0-9-]*$/.test(executable)) return 'shell_other';
   if (executable === 'git') {
     if (['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files'].includes(second)) return 'git_inspect';
+    //  A verbose listing flag also creates the named branch, so only the bare flag form inspects.
+    if (second === 'branch' && ['-v', '-vv'].includes(third) && fourth) return 'git_branch_update';
     if (second === 'branch' && ['', '-a', '-r', '-v', '--list', '--show-current', '--contains', '--merged', '--no-merged', '--points-at'].includes(third)) return 'git_inspect';
+    //  The documented `git checkout [<branch>] -- <file>...` form restores paths without moving HEAD.
+    if (second === 'checkout' && words.includes('--')) return 'file_write';
     if (['branch', 'checkout', 'switch', 'fetch', 'pull', 'merge', 'rebase'].includes(second)) return 'git_branch_update';
     if (['add', 'commit', 'push'].includes(second)) return 'git_commit_push';
   }
