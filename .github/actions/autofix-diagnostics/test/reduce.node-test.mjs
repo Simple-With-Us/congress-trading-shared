@@ -70,6 +70,8 @@ test('classifies only bounded leading commands and propagates paired errors', ()
     ['git branch -v', 'git_inspect'], ['git branch -v new-name', 'shell_other'],
     ['git branch -vv new-name', 'shell_other'], ['git checkout -- file.txt', 'file_write'],
     ['git checkout main -- file.txt', 'file_write'], ['git checkout main', 'shell_other'],
+    ["git branch --list 'feature/*'", 'git_inspect'], ['git branch --list feature-a', 'git_inspect'], ['git branch -l main', 'git_inspect'],
+    ['gh pr close 368', 'github_review_write'], ['gh pr update-branch', 'github_review_write'], ['gh pr revert 353', 'github_review_write'],
     [`git commit -m "${SENTINEL}"`, 'git_commit_push'], ['git push origin branch', 'git_commit_push'],
     ['gh pr checks 42', 'github_review_read'], ['gh pr review 42 --approve', 'github_review_write'],
     ['npm ci', 'dependency_install'], ['npm test', 'test'], ['npm run typecheck', 'typecheck'],
@@ -91,7 +93,7 @@ test('classifies only bounded leading commands and propagates paired errors', ()
   assert.deepEqual(out.events.filter(e => e.event_type === 'tool_use').map(e => e.operation_category), examples.map(([, category]) => category));
   assert.deepEqual(out.events.filter(e => e.event_type === 'tool_result').map(e => e.operation_category), examples.map(([, category]) => category));
   assert.equal(out.counts.operation_uses.git_commit_push, 2);
-  assert.equal(out.counts.operation_errors.github_review_write, 1);
+  assert.equal(out.counts.operation_errors.github_review_write, 4);
   assert.equal(out.counts.operation_errors.shell_other, 1);
   assert.equal(Object.keys(out.counts.operation_uses).length, Object.keys(out.counts.operation_errors).length);
   assert.equal(JSON.stringify(out).includes(SENTINEL), false);

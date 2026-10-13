@@ -26,7 +26,7 @@ function shellOperation(input) {
     // Branch flags compose into both reads and mutations.  Recognize only narrow, unambiguous forms.
     if (second === 'branch') {
       if (words.length === 2 || words.length === 3 && ['-a', '-r', '-v', '-vv', '--list', '--show-current', '--contains', '--merged', '--no-merged', '--points-at'].includes(third)) return 'git_inspect';
-      if (words.length === 4 && ['--contains', '--merged', '--no-merged', '--points-at'].includes(third) && !fourth.startsWith('-')) return 'git_inspect';
+      if (words.length === 4 && ['--contains', '--merged', '--no-merged', '--points-at', '-l', '--list'].includes(third) && !fourth.startsWith('-')) return 'git_inspect';
       if (['-d', '--delete', '-m', '--move', '-c', '--copy'].includes(third)) return 'git_branch_update';
       return 'shell_other';
     }
@@ -37,7 +37,7 @@ function shellOperation(input) {
   }
   if (executable === 'gh' && second === 'pr') {
     if (['view', 'list', 'checks', 'diff', 'status'].includes(third)) return 'github_review_read';
-    if (['review', 'comment', 'merge', 'edit', 'ready'].includes(third)) return 'github_review_write';
+    if (['review', 'comment', 'merge', 'edit', 'ready', 'create', 'close', 'reopen', 'lock', 'revert', 'unlock', 'update-branch'].includes(third)) return 'github_review_write';
   }
   if (['npm', 'pnpm', 'yarn', 'bun'].includes(executable)) {
     if (['install', 'ci', 'add'].includes(second)) return 'dependency_install';
