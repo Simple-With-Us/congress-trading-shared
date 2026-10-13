@@ -12,7 +12,7 @@ test('failed model steps remain failed and diagnostics run afterward without raw
   assert(model && reducer && upload);
   assert(!model.includes('continue-on-error'));
   assert.match(model, /show_full_output: "false"/);
-  assert.match(workflow, /--max-turns 60\n/);
+  assert.match(workflow, /--max-turns 120\n/);
   assert(steps.indexOf(model) < steps.indexOf(reducer));
   assert(steps.indexOf(reducer) < steps.indexOf(upload));
   assert.match(reducer, /if: \$\{\{ always\(\) \}\}/);

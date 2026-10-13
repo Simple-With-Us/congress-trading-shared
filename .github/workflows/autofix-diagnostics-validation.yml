@@ -50,7 +50,7 @@ jobs:
             { type: 'user', message: { content: [
               { type: 'tool_result', tool_use_id: 'local1', is_error: true, content: sentinel },
             ] } },
-            { type: 'result', subtype: 'error_max_turns', num_turns: 61, duration_ms: 1234, is_error: true, errors: [sentinel] },
+            { type: 'result', subtype: 'error_max_turns', num_turns: 121, duration_ms: 1234, is_error: true, errors: [sentinel] },
           ];
           writeFileSync(join(process.env.RUNNER_TEMP, 'claude-execution-output.json'), JSON.stringify(messages), { mode: 0o600 });
           JS

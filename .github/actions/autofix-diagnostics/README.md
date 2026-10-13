@@ -23,10 +23,18 @@ signatures and original tool names are never written.  Opaque or large inputs
 each form their own group.  Only a fixed builtin tool allowlist is retained;
 all named MCP tools collapse to `mcp`, and unknown names to `other`.
 
-The output contract is a JSON object with `schema_version`, fixed
+The version-2 output contract is a JSON object with `schema_version`, fixed
 `availability`, bounded `counts`, sanitized aggregate `result`, and at most
-500 `events`.  Result subtype is allowlisted; `result.is_error` preserves a
-boolean failure flag independently of subtype, or null when absent/invalid.
+500 `events`.  Every tool event has a fixed `operation_category`, copied from
+the tool use to its paired result.  `counts.operation_uses` and
+`counts.operation_errors` contain bounded counts for every fixed category,
+including `other` for unpaired results.  The categories cover Git inspection,
+branch updates, commit/push, GitHub PR discovery and mutation, dependency
+installation, test/typecheck/build/lint, file discovery/read/write, and fixed
+shell/web/agent/utility/MCP/other fallbacks.  Bash classification inspects at
+most 8,192 characters of `input.command` in memory and recognizes only simple
+leading commands; complex or oversized commands fall back to `shell_other`.  This heuristic is incomplete and does not detect semantic duplicate work.  Repeated calls can be useful.  No command text, arguments, paths, custom
+scripts, prompts, or results are emitted.  Result subtype is allowlisted;  `result.is_error` preserves a boolean failure flag independently of subtype, or null when absent/invalid.
 Error classification reads at most 8,192 characters from a string or the first
 128 array text blocks, then emits only a fixed category.  Duration accepts nonnegative
 safe integers capped at one day, and turn counts accept nonnegative safe
