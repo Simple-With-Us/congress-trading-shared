@@ -87,7 +87,7 @@ on:
         required: false
         type: string
         default: |
-          --max-turns 60
+          --max-turns 120
           --allowedTools "Edit,Write,Read,Bash"
         description: "Extra CLI args passed to claude-code-action"
       allowed_bots:
