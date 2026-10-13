@@ -23,12 +23,16 @@ function shellOperation(input) {
   if (!/^[a-z][a-z0-9-]*$/.test(executable)) return 'shell_other';
   if (executable === 'git') {
     if (['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files'].includes(second)) return 'git_inspect';
-    //  A verbose listing flag also creates the named branch, so only the bare flag form inspects.
-    if (second === 'branch' && ['-v', '-vv'].includes(third) && fourth) return 'git_branch_update';
-    if (second === 'branch' && ['', '-a', '-r', '-v', '--list', '--show-current', '--contains', '--merged', '--no-merged', '--points-at'].includes(third)) return 'git_inspect';
-    //  The documented `git checkout [<branch>] -- <file>...` form restores paths without moving HEAD.
-    if (second === 'checkout' && words.includes('--')) return 'file_write';
-    if (['branch', 'checkout', 'switch', 'fetch', 'pull', 'merge', 'rebase'].includes(second)) return 'git_branch_update';
+    // Branch flags compose into both reads and mutations.  Recognize only narrow, unambiguous forms.
+    if (second === 'branch') {
+      if (words.length === 2 || words.length === 3 && ['-a', '-r', '-v', '-vv', '--list', '--show-current', '--contains', '--merged', '--no-merged', '--points-at'].includes(third)) return 'git_inspect';
+      if (words.length === 4 && ['--contains', '--merged', '--no-merged', '--points-at'].includes(third) && !fourth.startsWith('-')) return 'git_inspect';
+      if (['-d', '--delete', '-m', '--move', '-c', '--copy'].includes(third)) return 'git_branch_update';
+      return 'shell_other';
+    }
+    // A path checkout changes files.  Other checkout forms can name either paths or branches.
+    if (second === 'checkout') return words.includes('--') ? 'file_write' : 'shell_other';
+    if (['switch', 'fetch', 'pull', 'merge', 'rebase'].includes(second)) return 'git_branch_update';
     if (['add', 'commit', 'push'].includes(second)) return 'git_commit_push';
   }
   if (executable === 'gh' && second === 'pr') {
