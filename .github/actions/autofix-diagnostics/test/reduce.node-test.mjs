@@ -60,6 +60,62 @@ test('whitelists transcript values and keeps secret sentinels out of every outpu
   assert.equal(JSON.stringify(result).includes('failed at'), false);
 });
 
+test('classifies only bounded leading commands and propagates paired errors', () => {
+  const examples = [
+    ['git status --short', 'git_inspect'], ['git branch -a', 'git_inspect'], ['git switch main', 'git_branch_update'],
+    ['git branch --show-current', 'git_inspect'], ['git branch --contains HEAD', 'git_inspect'],
+    ['git branch --merged', 'git_inspect'], ['git branch -d old', 'git_branch_update'],
+    ['git branch -v -a', 'shell_other'], ['git branch -vv', 'git_inspect'],
+    ['git checkout file.txt', 'shell_other'], ['git branch --contains HEAD -d old', 'shell_other'],
+    ['git branch -v', 'git_inspect'], ['git branch -v new-name', 'shell_other'],
+    ['git branch -vv new-name', 'shell_other'], ['git checkout -- file.txt', 'file_write'],
+    ['git checkout main -- file.txt', 'file_write'], ['git checkout main', 'shell_other'],
+    [`git commit -m "${SENTINEL}"`, 'git_commit_push'], ['git push origin branch', 'git_commit_push'],
+    ['gh pr checks 42', 'github_review_read'], ['gh pr review 42 --approve', 'github_review_write'],
+    ['npm ci', 'dependency_install'], ['npm test', 'test'], ['npm run typecheck', 'typecheck'],
+    ['npm run build', 'build'], ['npm run lint', 'lint'], ['rg --files', 'file_discovery'],
+    ['sed -n 1,20p file', 'file_read'], ['sed -i s/a/b/ file', 'file_write'], ['mkdir output', 'file_write'],
+    ['sed --in-place s/a/b/ file', 'file_write'], ['sed --in-place=.bak s/a/b/ file', 'file_write'],
+    ['git remote add origin private', 'shell_other'], ['npx playwright install', 'shell_other'],
+    [`echo "git status ${SENTINEL}"`, 'shell_other'],
+    [`bash -lc 'git push ${SENTINEL}'`, 'shell_other'],
+    [`git status && git push ${SENTINEL}`, 'shell_other'],
+    [`git status\nrm ${SENTINEL}`, 'shell_other'],
+    [`git status ${'x'.repeat(8193)}${SENTINEL}`, 'shell_other'],
+  ];
+  const transcript = examples.flatMap(([command], index) => [
+    { type: 'assistant', message: { content: [{ type: 'tool_use', id: String(index), name: 'Bash', input: { command, private: SENTINEL } }] } },
+    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: String(index), is_error: examples[index][1] === 'github_review_write' || command.includes('&&'), content: SENTINEL }] } },
+  ]);
+  const out = reduceTranscript(transcript);
+  assert.deepEqual(out.events.filter(e => e.event_type === 'tool_use').map(e => e.operation_category), examples.map(([, category]) => category));
+  assert.deepEqual(out.events.filter(e => e.event_type === 'tool_result').map(e => e.operation_category), examples.map(([, category]) => category));
+  assert.equal(out.counts.operation_uses.git_commit_push, 2);
+  assert.equal(out.counts.operation_errors.github_review_write, 1);
+  assert.equal(out.counts.operation_errors.shell_other, 1);
+  assert.equal(Object.keys(out.counts.operation_uses).length, Object.keys(out.counts.operation_errors).length);
+  assert.equal(JSON.stringify(out).includes(SENTINEL), false);
+});
+
+test('maps builtin operations and unpaired errors to fixed categories', () => {
+  const out = reduceTranscript([
+    { type: 'assistant', message: { content: [
+      { type: 'tool_use', id: 'read', name: 'Read', input: { file_path: SENTINEL } },
+      { type: 'tool_use', id: 'edit', name: 'Edit', input: { old_string: SENTINEL } },
+      { type: 'tool_use', id: 'grep', name: 'Grep', input: { pattern: SENTINEL } },
+      { type: 'tool_use', id: 'mcp', name: `mcp__${SENTINEL}__search`, input: {} },
+    ] } },
+    { type: 'user', message: { content: [
+      { type: 'tool_result', tool_use_id: 'read', is_error: true, content: SENTINEL },
+      { type: 'tool_result', tool_use_id: 'missing', is_error: true, content: SENTINEL },
+    ] } },
+  ]);
+  assert.deepEqual(out.events.map(e => e.operation_category), ['file_read', 'file_write', 'file_discovery', 'mcp', 'file_read', 'other']);
+  assert.equal(out.counts.operation_errors.file_read, 1);
+  assert.equal(out.counts.operation_errors.other, 1);
+  assert.equal(JSON.stringify(out).includes(SENTINEL), false);
+});
+
 test('repeated identical calls group stably within one run without exposing signatures', () => {
   const messages = [{ type: 'assistant', message: { content: [
     { type: 'tool_use', id: 'one', name: 'Read', input: { file_path: '/a' } },
@@ -175,6 +231,9 @@ test('caps event rows and rejects unsafe result counters and subtype strings', (
   const parts = Array.from({ length: 700 }, (_, i) => ({ type: 'tool_use', id: String(i), name: 'Read', input: { n: i } }));
   const out = reduceTranscript([{ type: 'assistant', message: { content: parts } }, { type: 'result', subtype: SENTINEL, duration_ms: -1, num_turns: '61' }]);
   assert.equal(out.events.length, 500);
+  assert.equal(out.schema_version, 2);
+  assert.equal(out.counts.operation_uses.file_read, 700);
+  assert(Buffer.byteLength(JSON.stringify(out)) <= 256 * 1024);
   assert.equal(out.result.subtype, 'other');
   assert.equal(out.result.duration_ms, null);
   assert.equal(out.result.num_turns, null);
