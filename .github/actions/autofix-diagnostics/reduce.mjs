@@ -6,7 +6,65 @@ const MAX_INPUT_BYTES = 16 * 1024 * 1024;
 const MAX_ROWS = 500;
 const MAX_OUTPUT_BYTES = 256 * 1024;
 const MAX_COUNT = 1_000_000;
+const MAX_COMMAND_CHARS = 8192;
 const BUILTINS = new Set(['Bash', 'Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'LS', 'NotebookEdit', 'WebFetch', 'WebSearch', 'TodoRead', 'TodoWrite', 'Task', 'Skill', 'AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode']);
+const OPERATIONS = ['git_inspect', 'git_branch_update', 'git_commit_push', 'github_review_read', 'github_review_write', 'dependency_install', 'test', 'typecheck', 'build', 'lint', 'file_discovery', 'file_read', 'file_write', 'shell_other', 'web', 'agent', 'utility', 'mcp', 'other'];
+
+function emptyOperations() {
+  return Object.fromEntries(OPERATIONS.map(operation => [operation, 0]));
+}
+
+// A leading, single shell command is only a hint.  Never parse quoted scripts or emit command text.
+function shellOperation(input) {
+  const command = input?.command;
+  if (typeof command !== 'string' || command.length > MAX_COMMAND_CHARS || /[\r\n;|&`\\<>$]/.test(command)) return 'shell_other';
+  const words = command.trim().split(/\s+/).map(word => word.toLowerCase());
+  const [executable = '', second = '', third = '', fourth = ''] = words;
+  if (!/^[a-z][a-z0-9-]*$/.test(executable)) return 'shell_other';
+  if (executable === 'git') {
+    if (['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files'].includes(second)) return 'git_inspect';
+    // Branch flags compose into both reads and mutations.  Recognize only narrow, unambiguous forms.
+    if (second === 'branch') {
+      if (words.length === 2 || words.length === 3 && ['-a', '-r', '-v', '-vv', '--list', '--show-current', '--contains', '--merged', '--no-merged', '--points-at'].includes(third)) return 'git_inspect';
+      if (words.length === 4 && ['--contains', '--merged', '--no-merged', '--points-at', '-l', '--list'].includes(third) && !fourth.startsWith('-')) return 'git_inspect';
+      if (['-d', '--delete', '-m', '--move', '-c', '--copy'].includes(third)) return 'git_branch_update';
+      return 'shell_other';
+    }
+    // A path checkout changes files.  Other checkout forms can name either paths or branches.
+    if (second === 'checkout') return words.includes('--') ? 'file_write' : 'shell_other';
+    if (['switch', 'fetch', 'pull', 'merge', 'rebase'].includes(second)) return 'git_branch_update';
+    if (['add', 'commit', 'push'].includes(second)) return 'git_commit_push';
+  }
+  if (executable === 'gh' && second === 'pr') {
+    if (['view', 'list', 'checks', 'diff', 'status'].includes(third)) return 'github_review_read';
+    if (['review', 'comment', 'merge', 'edit', 'ready', 'create', 'close', 'reopen', 'lock', 'revert', 'unlock', 'update-branch'].includes(third)) return 'github_review_write';
+  }
+  if (['npm', 'pnpm', 'yarn', 'bun'].includes(executable)) {
+    if (['install', 'ci', 'add'].includes(second)) return 'dependency_install';
+    if (second === 'test' || second === 'run' && /^test(?::[a-z0-9-]+)?$/.test(third)) return 'test';
+    if (second === 'run' && /^typecheck(?::[a-z0-9-]+)?$/.test(third)) return 'typecheck';
+    if (second === 'run' && /^build(?::[a-z0-9-]+)?$/.test(third)) return 'build';
+    if (second === 'run' && /^lint(?::[a-z0-9-]+)?$/.test(third)) return 'lint';
+  }
+  if ((executable === 'npx' && (['vitest', 'jest'].includes(second) || second === 'playwright' && third === 'test')) || executable === 'pytest' || (['go', 'cargo'].includes(executable) && second === 'test')) return 'test';
+  // find/fd can run arbitrary actions and sed scripts can write files without -i.  Leave these ambiguous programs unclassified instead of inferring read-only behavior.
+  if (['find', 'fd', 'sed'].includes(executable)) return 'shell_other';
+  // rg --pre spawns its COMMAND against every searched path, so a preprocessor can mutate files.  Plain searches stay discovery.
+  if (executable === 'rg' && words.some(word => word === '--pre' || word.startsWith('--pre='))) return 'shell_other';
+  if (['rg', 'ls'].includes(executable)) return 'file_discovery';
+  if (['cat', 'head', 'tail'].includes(executable)) return 'file_read';
+  if (['touch', 'mkdir', 'cp', 'mv', 'rm'].includes(executable)) return 'file_write';
+  return 'shell_other';
+}
+
+function operationFor(tool, input) {
+  if (tool.name === 'Bash') return shellOperation(input);
+  if (tool.name === 'Read') return 'file_read';
+  if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(tool.name)) return 'file_write';
+  if (['Glob', 'Grep', 'LS'].includes(tool.name)) return 'file_discovery';
+  if (tool.category === 'web' || tool.category === 'agent' || tool.category === 'mcp') return tool.category;
+  return tool.category === 'utility' ? 'utility' : 'other';
+}
 
 function boundedInt(value, maximum = MAX_COUNT) {
   return Number.isSafeInteger(value) && value >= 0 ? Math.min(value, maximum) : null;
@@ -65,6 +123,8 @@ export function reduceTranscript(messages, result = {}) {
   const repeats = new Map();
   let assistantMessageCount = 0;
   const counts = { assistant_messages: 0, user_messages: 0, tool_uses: 0, tool_results: 0 };
+  const operationUses = emptyOperations();
+  const operationErrors = emptyOperations();
   for (let i = 0; i < messages.length && i < MAX_COUNT; i += 1) {
     const msg = messages[i];
     if (msg && msg.type === 'result') result = msg;
@@ -78,35 +138,39 @@ export function reduceTranscript(messages, result = {}) {
       if (type === 'assistant' && part.type === 'tool_use') {
         counts.tool_uses = Math.min(MAX_COUNT, counts.tool_uses + 1);
         const tool = toolClass(part.name);
+        const operation = operationFor(tool, part.input);
+        operationUses[operation] = Math.min(MAX_COUNT, operationUses[operation] + 1);
         const internalToolName = typeof part.name === 'string' && part.name.length <= 256 ? part.name : `opaque-name:${counts.tool_uses}`;
         const signature = inputSignature(part.input);
         const key = JSON.stringify([internalToolName, tool.name, tool.category, signature ?? `unique:${counts.tool_uses}`]);
         if (!repeatGroups.has(key)) repeatGroups.set(key, repeatGroups.size + 1);
         const group = repeatGroups.get(key);
         repeats.set(group, (repeats.get(group) || 0) + 1);
-        if (typeof part.id === 'string' && part.id.length <= 1024) toolIds.set(part.id, tool);
-        if (events.length < MAX_ROWS) events.push({ event_index: events.length, event_type: 'tool_use', assistant_message_index: assistantMessageIndex, tool_name: tool.name, tool_category: tool.category, repeat_group: group, input_bytes: signature === null ? null : Buffer.byteLength(signature) });
+        if (typeof part.id === 'string' && part.id.length <= 1024) toolIds.set(part.id, { ...tool, operation });
+        if (events.length < MAX_ROWS) events.push({ event_index: events.length, event_type: 'tool_use', assistant_message_index: assistantMessageIndex, tool_name: tool.name, tool_category: tool.category, operation_category: operation, repeat_group: group, input_bytes: signature === null ? null : Buffer.byteLength(signature) });
       } else if (type === 'user' && part.type === 'tool_result') {
         counts.tool_results = Math.min(MAX_COUNT, counts.tool_results + 1);
         const tool = typeof part.tool_use_id === 'string' ? toolIds.get(part.tool_use_id) : null;
+        const operation = tool?.operation ?? 'other';
+        if (part.is_error === true) operationErrors[operation] = Math.min(MAX_COUNT, operationErrors[operation] + 1);
         const content = errorText(part.content);
         const outputBytes = typeof part.content === 'string' ? Buffer.byteLength(part.content) : Array.isArray(part.content) ? Math.min(MAX_INPUT_BYTES, Buffer.byteLength(JSON.stringify(part.content))) : null;
-        if (events.length < MAX_ROWS) events.push({ event_index: events.length, event_type: 'tool_result', assistant_message_index: null, tool_name: tool?.name ?? 'other', tool_category: tool?.category ?? 'other', is_error: part.is_error === true, error_category: part.is_error === true ? safeErrorCategory(content || true) : 'none', output_bytes: outputBytes });
+        if (events.length < MAX_ROWS) events.push({ event_index: events.length, event_type: 'tool_result', assistant_message_index: null, tool_name: tool?.name ?? 'other', tool_category: tool?.category ?? 'other', operation_category: operation, is_error: part.is_error === true, error_category: part.is_error === true ? safeErrorCategory(content || true) : 'none', output_bytes: outputBytes });
       }
     }
   }
   const repeatedGroups = [...repeats.entries()].filter(([, n]) => n > 1).length;
   return {
-    schema_version: 1,
+    schema_version: 2,
     availability: 'available',
-    counts: { ...counts, event_rows: events.length, repeated_call_groups: repeatedGroups },
+    counts: { ...counts, event_rows: events.length, repeated_call_groups: repeatedGroups, operation_uses: operationUses, operation_errors: operationErrors },
     result: { subtype: knownSubtype(result.subtype), is_error: typeof result.is_error === 'boolean' ? result.is_error : null, duration_ms: boundedInt(result.duration_ms, 86_400_000), num_turns: boundedInt(result.num_turns) },
     events,
   };
 }
 
 function unavailable(status) {
-  return { schema_version: 1, availability: status, counts: { assistant_messages: 0, user_messages: 0, tool_uses: 0, tool_results: 0, event_rows: 0, repeated_call_groups: 0 }, result: { subtype: 'other', is_error: null, duration_ms: null, num_turns: null }, events: [] };
+  return { schema_version: 2, availability: status, counts: { assistant_messages: 0, user_messages: 0, tool_uses: 0, tool_results: 0, event_rows: 0, repeated_call_groups: 0, operation_uses: emptyOperations(), operation_errors: emptyOperations() }, result: { subtype: 'other', is_error: null, duration_ms: null, num_turns: null }, events: [] };
 }
 
 function appendActionOutput(value) {
