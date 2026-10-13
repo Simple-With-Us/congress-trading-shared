@@ -60,48 +60,23 @@ test('whitelists transcript values and keeps secret sentinels out of every outpu
   assert.equal(JSON.stringify(result).includes('failed at'), false);
 });
 
-test('classifies only bounded leading commands and propagates paired errors', () => {
-  const examples = [
-    ['git status --short', 'git_inspect'], ['git branch -a', 'git_inspect'], ['git switch main', 'git_branch_update'],
-    ['git branch --show-current', 'git_inspect'], ['git branch --contains HEAD', 'git_inspect'],
-    ['git branch --merged', 'git_inspect'], ['git branch -d old', 'git_branch_update'],
-    ['git branch -v -a', 'shell_other'], ['git branch -vv', 'git_inspect'],
-    ['git checkout file.txt', 'shell_other'], ['git branch --contains HEAD -d old', 'shell_other'],
-    ['git branch -v', 'git_inspect'], ['git branch -v new-name', 'shell_other'],
-    ['git branch -vv new-name', 'shell_other'], ['git checkout -- file.txt', 'file_write'],
-    ['git checkout main -- file.txt', 'file_write'], ['git checkout main', 'shell_other'],
-    ["git branch --list 'feature/*'", 'git_inspect'], ['git branch --list feature-a', 'git_inspect'], ['git branch -l main', 'git_inspect'],
-    ['gh pr close 368', 'github_review_write'], ['gh pr update-branch', 'github_review_write'], ['gh pr revert 353', 'github_review_write'],
-    [`git commit -m "${SENTINEL}"`, 'git_commit_push'], ['git push origin branch', 'git_commit_push'],
-    ['gh pr checks 42', 'github_review_read'], ['gh pr review 42 --approve', 'github_review_write'],
-    ['npm ci', 'dependency_install'], ['npm test', 'test'], ['npm run typecheck', 'typecheck'],
-    ['npm run build', 'build'], ['npm run lint', 'lint'], ['rg --files', 'file_discovery'],
-    ['sed -n 1,20p file', 'shell_other'], ['sed -i s/a/b/ file', 'shell_other'], ['mkdir output', 'file_write'],
-    ['sed --in-place s/a/b/ file', 'shell_other'], ['sed --in-place=.bak s/a/b/ file', 'shell_other'],
-    ['sed -Ei s/a/b/ file', 'shell_other'], ['sed -ni.bak s/a/b/ file', 'shell_other'],
-    ['sed -n woutput file', 'shell_other'], ['find . -fprint output', 'shell_other'], ['fd -x cat', 'shell_other'], ['find . -name tmp', 'shell_other'], ['find tmp -delete', 'shell_other'], ['find . -exec rm tmp {} +', 'shell_other'],
-    ['git remote add origin private', 'shell_other'], ['npx playwright install', 'shell_other'],
-    ['rg --pre=rm pattern .', 'shell_other'], ['rg --pre gzip pattern .', 'shell_other'], ['rg -l pattern .', 'file_discovery'],
-    ['rg --hostname-bin=helper pattern .', 'shell_other'], ['rg --hostname-bin helper pattern .', 'shell_other'], ['git diff', 'git_inspect'],
-    ['git diff --output=patch', 'file_write'], ['git log --output report', 'file_write'], ['git status', 'git_inspect'],
-    [`echo "git status ${SENTINEL}"`, 'shell_other'],
-    [`bash -lc 'git push ${SENTINEL}'`, 'shell_other'],
-    [`git status && git push ${SENTINEL}`, 'shell_other'],
-    [`git status\nrm ${SENTINEL}`, 'shell_other'],
-    [`git status ${'x'.repeat(8193)}${SENTINEL}`, 'shell_other'],
+test('keeps Bash purpose unknown without serializing commands or losing paired errors', () => {
+  const commands = [
+    'git status --short', 'npm test', 'rg --files', 'git diff --output=patch',
+    `echo "git status ${SENTINEL}"`, `git status && git push ${SENTINEL}`,
+    `git status ${'x'.repeat(8193)}${SENTINEL}`,
   ];
-  const transcript = examples.flatMap(([command], index) => [
+  const transcript = commands.flatMap((command, index) => [
     { type: 'assistant', message: { content: [{ type: 'tool_use', id: String(index), name: 'Bash', input: { command, private: SENTINEL } }] } },
-    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: String(index), is_error: examples[index][1] === 'github_review_write' || command.includes('&&'), content: SENTINEL }] } },
+    { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: String(index), is_error: index === 3 || index === 5, content: SENTINEL }] } },
   ]);
   const out = reduceTranscript(transcript);
-  assert.deepEqual(out.events.filter(e => e.event_type === 'tool_use').map(e => e.operation_category), examples.map(([, category]) => category));
-  assert.deepEqual(out.events.filter(e => e.event_type === 'tool_result').map(e => e.operation_category), examples.map(([, category]) => category));
-  assert.equal(out.counts.operation_uses.git_commit_push, 2);
-  assert.equal(out.counts.operation_errors.github_review_write, 4);
-  assert.equal(out.counts.operation_errors.shell_other, 1);
+  assert(out.events.every(event => event.operation_category === 'shell_other'));
+  assert.equal(out.counts.operation_uses.shell_other, commands.length);
+  assert.equal(out.counts.operation_errors.shell_other, 2);
   assert.equal(Object.keys(out.counts.operation_uses).length, Object.keys(out.counts.operation_errors).length);
   assert.equal(JSON.stringify(out).includes(SENTINEL), false);
+  assert.equal(JSON.stringify(out).includes('git status'), false);
 });
 
 test('maps builtin operations and unpaired errors to fixed categories', () => {

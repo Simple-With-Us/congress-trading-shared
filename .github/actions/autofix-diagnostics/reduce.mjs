@@ -6,7 +6,6 @@ const MAX_INPUT_BYTES = 16 * 1024 * 1024;
 const MAX_ROWS = 500;
 const MAX_OUTPUT_BYTES = 256 * 1024;
 const MAX_COUNT = 1_000_000;
-const MAX_COMMAND_CHARS = 8192;
 const BUILTINS = new Set(['Bash', 'Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'LS', 'NotebookEdit', 'WebFetch', 'WebSearch', 'TodoRead', 'TodoWrite', 'Task', 'Skill', 'AskUserQuestion', 'EnterPlanMode', 'ExitPlanMode']);
 const OPERATIONS = ['git_inspect', 'git_branch_update', 'git_commit_push', 'github_review_read', 'github_review_write', 'dependency_install', 'test', 'typecheck', 'build', 'lint', 'file_discovery', 'file_read', 'file_write', 'shell_other', 'web', 'agent', 'utility', 'mcp', 'other'];
 
@@ -14,52 +13,8 @@ function emptyOperations() {
   return Object.fromEntries(OPERATIONS.map(operation => [operation, 0]));
 }
 
-// A leading, single shell command is only a hint.  Never parse quoted scripts or emit command text.
-function shellOperation(input) {
-  const command = input?.command;
-  if (typeof command !== 'string' || command.length > MAX_COMMAND_CHARS || /[\r\n;|&`\\<>$]/.test(command)) return 'shell_other';
-  const words = command.trim().split(/\s+/).map(word => word.toLowerCase());
-  const [executable = '', second = '', third = '', fourth = ''] = words;
-  if (!/^[a-z][a-z0-9-]*$/.test(executable)) return 'shell_other';
-  if (executable === 'git') {
-    // Git --output=<file> writes results to a file instead of stdout, so these subcommands are not read-only.
-    if (['status', 'diff', 'log', 'show', 'rev-parse', 'ls-files'].includes(second)) return words.some(word => word === '--output' || word.startsWith('--output=')) ? 'file_write' : 'git_inspect';
-    // Branch flags compose into both reads and mutations.  Recognize only narrow, unambiguous forms.
-    if (second === 'branch') {
-      if (words.length === 2 || words.length === 3 && ['-a', '-r', '-v', '-vv', '--list', '--show-current', '--contains', '--merged', '--no-merged', '--points-at'].includes(third)) return 'git_inspect';
-      if (words.length === 4 && ['--contains', '--merged', '--no-merged', '--points-at', '-l', '--list'].includes(third) && !fourth.startsWith('-')) return 'git_inspect';
-      if (['-d', '--delete', '-m', '--move', '-c', '--copy'].includes(third)) return 'git_branch_update';
-      return 'shell_other';
-    }
-    // A path checkout changes files.  Other checkout forms can name either paths or branches.
-    if (second === 'checkout') return words.includes('--') ? 'file_write' : 'shell_other';
-    if (['switch', 'fetch', 'pull', 'merge', 'rebase'].includes(second)) return 'git_branch_update';
-    if (['add', 'commit', 'push'].includes(second)) return 'git_commit_push';
-  }
-  if (executable === 'gh' && second === 'pr') {
-    if (['view', 'list', 'checks', 'diff', 'status'].includes(third)) return 'github_review_read';
-    if (['review', 'comment', 'merge', 'edit', 'ready', 'create', 'close', 'reopen', 'lock', 'revert', 'unlock', 'update-branch'].includes(third)) return 'github_review_write';
-  }
-  if (['npm', 'pnpm', 'yarn', 'bun'].includes(executable)) {
-    if (['install', 'ci', 'add'].includes(second)) return 'dependency_install';
-    if (second === 'test' || second === 'run' && /^test(?::[a-z0-9-]+)?$/.test(third)) return 'test';
-    if (second === 'run' && /^typecheck(?::[a-z0-9-]+)?$/.test(third)) return 'typecheck';
-    if (second === 'run' && /^build(?::[a-z0-9-]+)?$/.test(third)) return 'build';
-    if (second === 'run' && /^lint(?::[a-z0-9-]+)?$/.test(third)) return 'lint';
-  }
-  if ((executable === 'npx' && (['vitest', 'jest'].includes(second) || second === 'playwright' && third === 'test')) || executable === 'pytest' || (['go', 'cargo'].includes(executable) && second === 'test')) return 'test';
-  // find/fd can run arbitrary actions and sed scripts can write files without -i.  Leave these ambiguous programs unclassified instead of inferring read-only behavior.
-  if (['find', 'fd', 'sed'].includes(executable)) return 'shell_other';
-  // rg --pre spawns its COMMAND against every searched path and --hostname-bin spawns a helper, so either can mutate files.  Plain searches stay discovery.
-  if (executable === 'rg' && words.some(word => ['--pre', '--hostname-bin'].includes(word) || word.startsWith('--pre=') || word.startsWith('--hostname-bin='))) return 'shell_other';
-  if (['rg', 'ls'].includes(executable)) return 'file_discovery';
-  if (['cat', 'head', 'tail'].includes(executable)) return 'file_read';
-  if (['touch', 'mkdir', 'cp', 'mv', 'rm'].includes(executable)) return 'file_write';
-  return 'shell_other';
-}
-
-function operationFor(tool, input) {
-  if (tool.name === 'Bash') return shellOperation(input);
+function operationFor(tool) {
+  if (tool.name === 'Bash') return 'shell_other';
   if (tool.name === 'Read') return 'file_read';
   if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(tool.name)) return 'file_write';
   if (['Glob', 'Grep', 'LS'].includes(tool.name)) return 'file_discovery';
@@ -139,7 +94,7 @@ export function reduceTranscript(messages, result = {}) {
       if (type === 'assistant' && part.type === 'tool_use') {
         counts.tool_uses = Math.min(MAX_COUNT, counts.tool_uses + 1);
         const tool = toolClass(part.name);
-        const operation = operationFor(tool, part.input);
+        const operation = operationFor(tool);
         operationUses[operation] = Math.min(MAX_COUNT, operationUses[operation] + 1);
         const internalToolName = typeof part.name === 'string' && part.name.length <= 256 ? part.name : `opaque-name:${counts.tool_uses}`;
         const signature = inputSignature(part.input);
