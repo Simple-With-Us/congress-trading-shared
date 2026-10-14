@@ -1,4 +1,8 @@
 # congress-trading-shared Effort Log — cross-agent board
+
+> **ARCHIVED Sun, Oct 11, 2026.**  Linear is the system of record: team CTS, https://linear.app/simple-with-us/team/CTS.
+> This file is read-only history.  Do not edit it or add rows.  See EFFORT-LOG-PROTOCOL.md.
+
 Protocol: /Users/jay/apps/EFFORT-LOG-PROTOCOL.md (canonical). Live board: this file
 (mirror: docs/EFFORT-LOG.md in the repo). As of 2026-08-20.
 
@@ -6,6 +10,7 @@ Protocol: /Users/jay/apps/EFFORT-LOG-PROTOCOL.md (canonical). Live board: this f
 - (none)
 
 ## Completed
+- **2026-10-10 - CLAUDE - Infisical prod-only (board `11df8f1b`, P2/S).**  Branch `claude/infisical-prod-only`.  `.cursor/infisical.env` now selects `prod`, `scripts/cursor-cloud-start.sh` refuses any other value, `INFISICAL.md` example uses `"prod"`.  Landed by the PR that adds this row.  Library `src/infisicalSettings.ts` deliberately untouched.  Note `docs/rollouts/2026-10-10-infisical-prod-only.md`.
 - **2026-09-18 - CURSOR - Shared package hygiene for v2.7.0 (cross-app, P3/S).** Branch
   `cursor/shared-hygiene-2-7-0`, PR #305 (`00f3cfee`, squash-merged to `main`). Appended
   a `[2.7.0]` Keep-a-Changelog section in the file's existing format, between
