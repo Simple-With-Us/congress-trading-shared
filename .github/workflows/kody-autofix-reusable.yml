@@ -42,7 +42,7 @@ on:
     secrets:
       MODEL_API_KEY:
         description: Provider key for model_base_url, forwarded explicitly by the caller
-        required: false
+        required: true
 
 permissions: {}
 
@@ -169,6 +169,11 @@ jobs:
       contents: read
       actions: read
     steps:
+      - name: Require Forwarded Provider Credential
+        shell: bash
+        env:
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+        run: test -n "$MODEL_API_KEY"
       - name: Check Out Trusted Helper Only
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
