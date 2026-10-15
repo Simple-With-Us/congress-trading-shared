@@ -169,16 +169,32 @@ test('split-privilege jobs never expose write credentials in generation', () => 
   assert.match(permissions(job('publish')), /pull-requests: write/);
   assert(!job('generate').includes('GH_TOKEN:'));
   assert(!job('generate').includes('GITHUB_TOKEN:'));
-  assert.equal((yaml.match(/GH_TOKEN:/g) ?? []).length, 3);
-  assert.equal((yaml.match(/secrets\./g) ?? []).length, 1);
+  assert.equal((yaml.match(/GH_TOKEN:/g) ?? []).length, 4);
+  assert.equal((yaml.match(/secrets\./g) ?? []).length, 2);
   assert.match(job('generate'), /environment: kody-autofix/);
   assert.match(job('generate'), /MODEL_API_KEY: \$\{\{ secrets\.MODEL_API_KEY \}\}/);
   assert.match(job('generate'), /KODY_MODEL: \$\{\{ inputs\.model \}\}/);
   assert.match(job('generate'), /KODY_MODEL_BASE_URL: \$\{\{ inputs\.model_base_url \}\}/);
-  assert.match(yaml, /    secrets:\n      MODEL_API_KEY:\n        description: [^\n]+\n        required: false\n/);
+  assert.match(yaml, /    secrets:\n      MODEL_API_KEY:\n        description: [^\n]+\n        required: true\n/);
   assert(!yaml.includes('secrets: inherit'));
   assert(!yaml.includes('GH_PAT'));
   assert(!yaml.includes('token: ${{ secrets.'));
+});
+
+test('generate requires a forwarded provider credential before checkout or scans', () => {
+  const generation = job('generate');
+  assert.match(generation, /- name: Require Forwarded Provider Credential\n/);
+  assert(generation.indexOf('Require Forwarded Provider Credential') < generation.indexOf('Check Out Trusted Helper Only'));
+  assert(generation.indexOf('Require Forwarded Provider Credential') < generation.indexOf('fleet.mjs scan '));
+  assert.match(generation, /MODEL_API_KEY: \$\{\{ secrets\.MODEL_API_KEY \}\}/);
+});
+
+test('prepare verifies the host spend environment when running in the workflow host repo', () => {
+  const prepare = job('prepare');
+  assert.match(prepare, /environments: read/);
+  assert.match(prepare, /Verify Host Spend Environment Is Provisioned/);
+  assert.match(prepare, /if: github\.repository == 'Simple-With-Us\/congress-trading-shared'/);
+  assert.match(prepare, /environments\/kody-autofix/);
 });
 
 test('verified fixed scanner runs before the sole provider-key step', () => {
@@ -188,13 +204,15 @@ test('verified fixed scanner runs before the sole provider-key step', () => {
   assert.match(generation, /sha256sum --check --strict/);
   assert(generation.indexOf('sha256sum --check --strict') < generation.indexOf('tar --extract'));
   assert(generation.indexOf('fleet.mjs scan ') < generation.indexOf('fleet.mjs generate '));
-  assert(generation.indexOf('fleet.mjs scan ') < generation.indexOf('secrets.MODEL_API_KEY'));
+  const generateStep = generation.split('      - name: Generate One Bounded Proposal\n')[1].split('      - name:')[0];
+  assert(generateStep.includes('secrets.MODEL_API_KEY'));
   assert(generation.indexOf('fleet.mjs generate ') < generation.indexOf('fleet.mjs scan-answer '));
   const answerScan = generation.split('      - name: Reject Secret-Bearing Generated Results\n')[1].split('      - uses:')[0];
   assert(!answerScan.includes('secrets.'));
   assert(!answerScan.includes('GH_TOKEN'));
   assert.match(generation, /kody-autofix\/answer-scan\.json/);
-  assert(!generation.slice(0,generation.indexOf('fleet.mjs scan ')).includes('secrets.'));
+  const beforeContextScan = generation.slice(0, generation.indexOf('fleet.mjs scan '));
+  assert.match(beforeContextScan, /Require Forwarded Provider Credential/);
 });
 
 test('artifact transport is run-scoped, required, short lived, and isolated under runner.temp', () => {

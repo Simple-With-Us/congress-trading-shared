@@ -42,7 +42,7 @@ on:
     secrets:
       MODEL_API_KEY:
         description: Provider key for model_base_url, forwarded explicitly by the caller
-        required: false
+        required: true
 
 permissions: {}
 
@@ -74,6 +74,8 @@ jobs:
       contents: read
       pull-requests: read
       checks: read
+      # Host-repo verification of the shared spend environment (CTS-326).
+      environments: read
     outputs:
       eligible: ${{ steps.prepare.outputs.eligible }}
       pr_number: ${{ steps.prepare.outputs.pr_number }}
@@ -94,6 +96,18 @@ jobs:
       - name: Install Trusted Helper Dependencies
         working-directory: trusted-helper/.github/kody-autofix
         run: npm ci
+      # Reusable workflows evaluate environment: on the workflow host repo.  Auto-created
+      # environments have zero protection rules, so paid work must not start until Jay
+      # provisions kody-autofix on Simple-With-Us/congress-trading-shared (CTS-326).
+      - name: Verify Host Spend Environment Is Provisioned
+        if: github.repository == 'Simple-With-Us/congress-trading-shared'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rules="$(gh api "repos/Simple-With-Us/congress-trading-shared/environments/kody-autofix" --jq '.protection_rules | length')"
+          test "${rules}" -ge 1
       - name: Record UTC Reservation Day
         id: clock
         shell: bash
@@ -169,6 +183,11 @@ jobs:
       contents: read
       actions: read
     steps:
+      - name: Require Forwarded Provider Credential
+        shell: bash
+        env:
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+        run: test -n "$MODEL_API_KEY"
       - name: Check Out Trusted Helper Only
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
