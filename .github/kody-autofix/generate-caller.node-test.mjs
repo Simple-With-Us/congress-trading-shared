@@ -249,7 +249,7 @@ test('provider model and endpoint options are validated and match the helper all
   assert.equal(String(MODEL_PATTERN), String(fleet.MODEL_PATTERN));
   assert.match(yaml, /      model:\n[\s\S]*?default: muse-spark-1.3-contributor\n/);
   assert.match(yaml, /      model_base_url:\n[\s\S]*?default: https:\/\/api\.meta\.ai\/v1\n/);
-  assert.equal([...yaml.matchAll(/ref: 'b1503884e547a8fb5d1449a94e03cae8c496da4c'/g)].length, 4);
+  assert.equal([...yaml.matchAll(/ref: '56ffe0ed5bf6906c0e74b5740d180b7bb8135b2c'/g)].length, 4);
   const native = generateCaller(valid({ model: 'muse-spark-1.3-contributor', 'model-base-url': 'https://api.meta.ai/v1' }));
   assert.match(native, /model: 'muse-spark-1\.3-contributor'\n      model_base_url: 'https:\/\/api\.meta\.ai\/v1'\n/);
   assert.match(native, /MODEL_API_KEY: \$\{\{ secrets\.META_MUSE_CODE_API_TOKEN \}\}/);
