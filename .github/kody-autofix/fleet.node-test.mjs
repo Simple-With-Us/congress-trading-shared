@@ -451,15 +451,15 @@ test('late concurrent source push prevents branch creation without force or roll
   assert.deepEqual(f.writes.map(w => w.path), ['git/trees', 'git/commits']);
 });
 test('provider configuration accepts only reviewed endpoints and strict model identifiers', () => {
-  assert.equal(MODEL, 'muse-spark-1.3-contributor');
-  assert.deepEqual(providerFrom({}), { url: 'https://api.meta.ai/v1/chat/completions', model: MODEL });
+  assert.equal(MODEL, 'MiniMax-M3');
+  assert.deepEqual(providerFrom({}), { url: 'https://api.minimax.io/v1/chat/completions', model: MODEL });
   assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://api.meta.ai/v1', KODY_MODEL: 'muse-spark-1.3-contributor' }),
     { url: 'https://api.meta.ai/v1/chat/completions', model: 'muse-spark-1.3-contributor' });
   assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://api.minimax.io/v1', KODY_MODEL: 'MiniMax-M3' }),
     { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3' });
   assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://ai-gateway.vercel.sh/v1', KODY_MODEL: 'minimax/minimax-m3' }),
     { url: 'https://ai-gateway.vercel.sh/v1/chat/completions', model: 'minimax/minimax-m3' });
-  assert.deepEqual([...MODEL_BASE_URLS], ['https://api.meta.ai/v1', 'https://api.minimax.io/v1', 'https://ai-gateway.vercel.sh/v1']);
+  assert.deepEqual([...MODEL_BASE_URLS], ['https://api.minimax.io/v1', 'https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1']);
   for (const url of ['https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/',
     'https://ai-gateway.vercel.sh.evil.example/v1', 'https://user@ai-gateway.vercel.sh/v1', 'https://api.deepseek.com/anthropic'])
     assert.throws(() => providerFrom({ KODY_MODEL_BASE_URL: url }), /base URL/);
@@ -468,10 +468,10 @@ test('provider configuration accepts only reviewed endpoints and strict model id
 });
 test('chat request is tool-free, bounded, schema-shaped, and carries only approved source', () => {
   const data = packageData(); const body = chatRequest(MODEL, data);
-  assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'response_format', 'stream']);
+  assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'stream', 'thinking']);
   assert.equal(body.max_tokens, LIMITS.outputTokens); assert.equal(body.stream, false);
   assert.equal(body.reasoning_split, undefined);
-  assert.equal(body.thinking, undefined);
+  assert.deepEqual(body.thinking, { type: 'disabled' });
   assert.equal(body.tools, undefined); assert.equal(body.tool_choice, undefined);
   assert.equal(body.messages[0].content, SYSTEM_PROMPT);
   assert(SYSTEM_PROMPT.includes(JSON.stringify(schema)));
@@ -479,11 +479,7 @@ test('chat request is tool-free, bounded, schema-shaped, and carries only approv
   assert.match(SYSTEM_PROMPT, /\{"edits":\[\{"path":"<source path>","old_text":"<exact existing source text>","new_text":"<replacement source text>"\}\]\}/);
   assert.match(SYSTEM_PROMPT, /top-level object must have only the key "edits"; do not return schema-definition keys such as "type", "properties", or "required"/);
   assert.deepEqual(JSON.parse(body.messages[1].content), { findings: data.findings, files: data.files.map(({ path, content }) => ({ path, content })) });
-  assert.deepEqual(body.response_format.json_schema.schema, schema);
-  const legacyMiniMax = chatRequest('MiniMax-M3', data, 'https://api.minimax.io/v1');
-  assert.deepEqual(Object.keys(legacyMiniMax).sort(), ['max_tokens', 'messages', 'model', 'stream', 'thinking']);
-  assert.deepEqual(legacyMiniMax.thinking, { type: 'disabled' });
-  assert.equal(legacyMiniMax.response_format, undefined);
+  assert.equal(body.response_format, undefined);
   const gatewayRequest = chatRequest(MODEL, data, 'https://ai-gateway.vercel.sh/v1');
   assert.equal(gatewayRequest.messages[0].content, SYSTEM_PROMPT);
   assert.equal(gatewayRequest.thinking, undefined);
