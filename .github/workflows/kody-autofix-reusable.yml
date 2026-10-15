@@ -1,8 +1,8 @@
-name: Kody MiniMax M3 Fix Proposals (Reusable)
+name: Kody Muse Spark Fix Proposals (Reusable)
 
 # Separate from the legacy Codex autofix workflow.  No secrets are inherited.
 # The trusted helper is independently pinned to its immutable publication commit.
-# Provider: MiniMax M3 through MiniMax's OpenAI-compatible chat completions (owner 2026-10-11).
+# Provider: Muse Spark Contributor through Meta Model API OpenAI-compatible chat completions (owner 2026-10-15).
 # Callers forward MODEL_API_KEY explicitly from the provider-specific organization secret.
 on:
   workflow_call:
@@ -33,12 +33,12 @@ on:
         description: Provider model identifier; the helper rejects anything outside its strict pattern
         required: false
         type: string
-        default: MiniMax-M3
+        default: muse-spark-1.3-contributor
       model_base_url:
         description: OpenAI-compatible base URL; the helper accepts only its reviewed allowlist
         required: false
         type: string
-        default: https://api.minimax.io/v1
+        default: https://api.meta.ai/v1
     secrets:
       MODEL_API_KEY:
         description: Provider key for model_base_url, forwarded explicitly by the caller
