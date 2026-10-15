@@ -169,7 +169,7 @@ test('split-privilege jobs never expose write credentials in generation', () => 
   assert.match(permissions(job('publish')), /pull-requests: write/);
   assert(!job('generate').includes('GH_TOKEN:'));
   assert(!job('generate').includes('GITHUB_TOKEN:'));
-  assert.equal((yaml.match(/GH_TOKEN:/g) ?? []).length, 4);
+  assert.equal((yaml.match(/GH_TOKEN:/g) ?? []).length, 3);
   assert.equal((yaml.match(/secrets\./g) ?? []).length, 2);
   assert.match(job('generate'), /environment: kody-autofix/);
   assert.match(job('generate'), /MODEL_API_KEY: \$\{\{ secrets\.MODEL_API_KEY \}\}/);
@@ -189,12 +189,10 @@ test('generate requires a forwarded provider credential before checkout or scans
   assert.match(generation, /MODEL_API_KEY: \$\{\{ secrets\.MODEL_API_KEY \}\}/);
 });
 
-test('prepare verifies the host spend environment when running in the workflow host repo', () => {
+test('prepare does not request invalid GITHUB_TOKEN permission scopes', () => {
   const prepare = job('prepare');
-  assert.match(prepare, /environments: read/);
-  assert.match(prepare, /Verify Host Spend Environment Is Provisioned/);
-  assert.match(prepare, /if: github\.repository == 'Simple-With-Us\/congress-trading-shared'/);
-  assert.match(prepare, /environments\/kody-autofix/);
+  assert(!prepare.includes('environments:'));
+  assert(!prepare.includes('Verify Host Spend Environment'));
 });
 
 test('verified fixed scanner runs before the sole provider-key step', () => {

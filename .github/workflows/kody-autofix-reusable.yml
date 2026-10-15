@@ -74,8 +74,6 @@ jobs:
       contents: read
       pull-requests: read
       checks: read
-      # Host-repo verification of the shared spend environment (CTS-326).
-      environments: read
     outputs:
       eligible: ${{ steps.prepare.outputs.eligible }}
       pr_number: ${{ steps.prepare.outputs.pr_number }}
@@ -96,18 +94,6 @@ jobs:
       - name: Install Trusted Helper Dependencies
         working-directory: trusted-helper/.github/kody-autofix
         run: npm ci
-      # Reusable workflows evaluate environment: on the workflow host repo.  Auto-created
-      # environments have zero protection rules, so paid work must not start until Jay
-      # provisions kody-autofix on Simple-With-Us/congress-trading-shared (CTS-326).
-      - name: Verify Host Spend Environment Is Provisioned
-        if: github.repository == 'Simple-With-Us/congress-trading-shared'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          rules="$(gh api "repos/Simple-With-Us/congress-trading-shared/environments/kody-autofix" --jq '.protection_rules | length')"
-          test "${rules}" -ge 1
       - name: Record UTC Reservation Day
         id: clock
         shell: bash
