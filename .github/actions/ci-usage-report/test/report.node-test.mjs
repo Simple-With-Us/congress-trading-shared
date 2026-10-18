@@ -52,7 +52,7 @@ test('hostile numbers are clamped to zero instead of poisoning the ledger', () =
   assert.equal(summary.durationMs, null);
 });
 
-test('v2 event carries the canonical ai keys, the run identity, and an idempotent event id', () => {
+test('v2 event carries the canonical ai block, the run identity, and an idempotent event id', () => {
   const batch = buildBatch(contextFromEnv(baseEnv), extractClaude(stream), new Date('2026-10-17T12:00:00Z'));
   assert.equal(batch.schemaVersion, 2);
   assert.equal(batch.producerId, 'ci-autofix');
@@ -63,29 +63,59 @@ test('v2 event carries the canonical ai keys, the run identity, and an idempoten
   assert.equal(event.unit, 'token');
   assert.equal(event.quantity, 4450);
   assert.equal(event.occurredAt, '2026-10-17T12:00:00.000Z');
-  assert.equal(event.metadata['ai.harness'], 'claude-code-ci');
-  assert.equal(event.metadata['ai.billingMode'], 'payg');
-  assert.equal(event.metadata['ai.model.served'], 'MiniMax-M3.1-Flash-Preview');
-  assert.equal(event.metadata['ai.tokens.cacheRead'], 4000);
-  assert.equal(event.metadata['ai.tokens.cacheWrite'], 300);
-  assert.equal(event.metadata['ai.durationMs'], 12345);
+  assert.deepEqual(event.ai, {
+    model: { requested: 'MiniMax-M3.1-Flash-Preview', served: 'MiniMax-M3.1-Flash-Preview' },
+    harness: 'claude-code-ci',
+    tokens: { input: 100, output: 50, cacheRead: 4000, cacheWrite5m: 300, cacheWrite1h: 0 },
+    durationMs: 12345,
+    billingMode: 'payg',
+  });
   assert.equal(event.metadata.prNumber, 42);
   assert.equal(event.metadata.runId, '991');
   assert.equal(event.metadata.runUrl, 'https://github.com/Simple-With-Us/Example/actions/runs/991');
+  assert.equal('ai.harness' in event.metadata, false);
   assert(Object.keys(event.metadata).length <= 50);
   assert(Object.keys(event.metadata).every((key) => key.length <= 80));
+});
+
+test('a cache write split is carried as 5-minute and 1-hour buckets, and leftovers are 5-minute', () => {
+  const { modelUsage, ...bare } = result;
+  const [event] = buildBatch(contextFromEnv(baseEnv), extractClaude(JSON.stringify(bare), 'MiniMax-M3')).events;
+  assert.equal(event.ai.tokens.cacheWrite5m, 200);
+  assert.equal(event.ai.tokens.cacheWrite1h, 100);
+  const partial = { ...bare, usage: { ...bare.usage, cache_creation_input_tokens: 350, cache_creation: { ephemeral_1h_input_tokens: 100 } } };
+  const [leftover] = buildBatch(contextFromEnv(baseEnv), extractClaude(JSON.stringify(partial), 'm')).events;
+  assert.equal(leftover.ai.tokens.cacheWrite5m, 250);
+  assert.equal(leftover.ai.tokens.cacheWrite1h, 100);
+});
+
+test('the legacy shape carries the same facts as the pre-UM-1592 metadata keys', () => {
+  const [event] = buildBatch(contextFromEnv(baseEnv), extractClaude(stream), new Date(), 'legacy').events;
+  assert.equal('ai' in event, false);
+  // The legacy prompt figure includes cache reads and writes;  the monitor subtracts them again.
+  assert.equal(event.metadata.promptTokens, 100 + 4000 + 300);
+  assert.equal(event.metadata.completionTokens, 50);
+  assert.equal(event.metadata.cachedTokens, 4000);
+  assert.equal(event.metadata.cacheWriteTokens, 300);
+  assert.equal(event.metadata.cacheWriteOneHourTokens, 0);
+  assert.equal(event.metadata.model, 'MiniMax-M3.1-Flash-Preview');
+  assert.equal(event.metadata.latencyMs, 12345);
+  assert.equal(event.metadata.harness, 'claude-code-ci');
+  assert.equal(event.quantity, 4450);
 });
 
 test('the CLI cost is only a first-class cost for an Anthropic-served model', () => {
   const [minimax] = buildBatch(contextFromEnv(baseEnv), extractClaude(stream)).events;
   assert.equal('costUsd' in minimax, false);
-  assert.equal(minimax.metadata['ai.cliReportedCostUsd'], 1.23);
+  assert.equal(minimax.metadata.cliReportedCostUsd, 1.23);
+  assert.equal('costSource' in minimax.ai, false);
   assert.equal(minimax.billingMode, 'actual');
   const anthropic = { ...result, modelUsage: { 'claude-sonnet-4-5': { ...result.modelUsage['MiniMax-M3.1-Flash-Preview'] } } };
   const [claude] = buildBatch(contextFromEnv(baseEnv), extractClaude(JSON.stringify(anthropic))).events;
   assert.equal(claude.costUsd, 1.23);
   assert.equal(claude.billingMode, 'estimated');
-  assert.equal(claude.metadata['ai.costSource'], 'estimated');
+  assert.equal(claude.ai.costSource, 'estimated');
+  assert.equal('cliReportedCostUsd' in claude.metadata, false);
 });
 
 test('several models share one run duration and one request', () => {
@@ -94,7 +124,8 @@ test('several models share one run duration and one request', () => {
   assert.equal(events.length, 2);
   assert.equal(events[0].requests, 1);
   assert.equal(events[1].requests, 0);
-  assert.equal('ai.durationMs' in events[1].metadata, false);
+  assert.equal(events[0].ai.durationMs, 12345);
+  assert.equal('durationMs' in events[1].ai, false);
   assert.notEqual(events[0].eventId, events[1].eventId);
 });
 
@@ -102,8 +133,9 @@ test('kody sidecar maps to the kody harness', () => {
   const sidecar = JSON.stringify({ model: 'MiniMax-M3', inputTokens: 900, outputTokens: 120, cacheReadTokens: 50, reasoningTokens: 30, durationMs: 8000, outcome: 'complete' });
   const batch = buildBatch(contextFromEnv({ ...baseEnv, UM_HARNESS: 'kody', UM_STEP: 'generate' }), extractKody(sidecar));
   const [event] = batch.events;
-  assert.equal(event.metadata['ai.harness'], 'kody');
-  assert.equal(event.metadata['ai.tokens.reasoning'], 30);
+  assert.equal(event.ai.harness, 'kody');
+  assert.equal(event.ai.tokens.reasoning, 30);
+  assert.equal(event.ai.tokens.input, 900);
   assert.equal(event.quantity, 1070);
   assert.equal(extractKody('nope'), null);
 });
@@ -121,8 +153,10 @@ test('posting retries server errors, stops on client errors, and never leaks the
     return calls.length < 3 ? new Response('{}', { status: 503 }) : new Response(JSON.stringify({ ok: true, received: 1, persisted: 1, duplicates: 0, rejected: 0 }), { status: 200 });
   };
   const waits = [];
-  const status = await postBatch(batch, SECRET, { fetchImpl: flaky, wait: async (ms) => { waits.push(ms); } });
-  assert.equal(status, 'ok received=1 persisted=1 duplicates=0 rejected=0');
+  const sent = await postBatch(batch, SECRET, { fetchImpl: flaky, wait: async (ms) => { waits.push(ms); } });
+  assert.equal(sent.ok, true);
+  assert.equal(sent.status, 'ok received=1 persisted=1 duplicates=0 rejected=0');
+  assert.deepEqual(sent.ack, { received: 1, persisted: 1, duplicates: 0, rejected: 0 });
   assert.equal(calls.length, 3);
   assert.deepEqual(waits, [1000, 2000]);
   assert.equal(calls[0].url, INGEST_URL);
@@ -130,9 +164,11 @@ test('posting retries server errors, stops on client errors, and never leaks the
   assert.equal(calls[0].options.redirect, 'error');
 
   const denied = [];
-  assert.equal(await postBatch(batch, SECRET, { fetchImpl: async () => { denied.push(1); return new Response('{}', { status: 401 }); }, wait: async () => {} }), 'http_401');
+  const refused = await postBatch(batch, SECRET, { fetchImpl: async () => { denied.push(1); return new Response('{}', { status: 401 }); }, wait: async () => {} });
+  assert.deepEqual(refused, { ok: false, status: 'http_401', ack: null });
   assert.equal(denied.length, 1);
-  assert.equal(await postBatch(batch, SECRET, { fetchImpl: async () => { throw new Error(SECRET); }, wait: async () => {} }), 'network_error');
+  const offline = await postBatch(batch, SECRET, { fetchImpl: async () => { throw new Error(SECRET); }, wait: async () => {} });
+  assert.deepEqual(offline, { ok: false, status: 'network_error', ack: null });
 });
 
 test('run is a quiet no-op without a token and never makes a request', async () => {
@@ -151,7 +187,7 @@ test('run reports end to end, survives bad input, and does not print the token',
     const env = { ...baseEnv, USAGE_INGEST_TOKEN: SECRET, UM_INPUT_FILE: file, UM_INPUT_KIND: 'claude' };
     const line = await run(env, { fetchImpl: async (url, options) => { seen.push(JSON.parse(options.body)); return new Response(JSON.stringify({ ok: true, received: 1, persisted: 1, duplicates: 0, rejected: 0 })); } });
     assert.match(line, /^::notice::usage report ok/);
-    assert.equal(seen[0].events[0].metadata['ai.tokens.output'], 50);
+    assert.equal(seen[0].events[0].ai.tokens.output, 50);
     assert(!JSON.stringify(seen).includes(SECRET));
     assert(!line.includes(SECRET));
 
@@ -166,6 +202,25 @@ test('run reports end to end, survives bad input, and does not print the token',
     await writeFile(file, stream);
     const offline = await run(env, { fetchImpl: async () => { throw new Error('offline'); }, wait: async () => {} });
     assert.match(offline, /^::warning::usage report not delivered \(network_error\)/);
+
+    // A monitor that predates the canonical block rejects the event;  the same event is resent
+    // with the legacy keys and nothing is lost.
+    const bodies = [];
+    const oldMonitor = async (url, options) => {
+      const body = JSON.parse(options.body);
+      bodies.push(body);
+      const rejected = 'ai' in body.events[0] ? 1 : 0;
+      return new Response(JSON.stringify({ ok: true, received: 1, persisted: 1 - rejected, duplicates: 0, rejected }));
+    };
+    const fellBack = await run(env, { fetchImpl: oldMonitor });
+    assert.match(fellBack, /^::notice::usage report ok .*legacy keys/);
+    assert.equal(bodies.length, 2);
+    assert.equal(bodies[1].events[0].metadata.completionTokens, 50);
+    assert.equal(bodies[0].events[0].eventId, bodies[1].events[0].eventId);
+
+    // Rejected both ways is a warning, never a failure.
+    const hostile = await run(env, { fetchImpl: async () => new Response(JSON.stringify({ ok: true, received: 1, persisted: 0, duplicates: 0, rejected: 1 })) });
+    assert.match(hostile, /^::warning::usage report not delivered/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
