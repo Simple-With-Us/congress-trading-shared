@@ -18,7 +18,7 @@ globalThis.fetch = async () => assert.fail('Real network access is forbidden in 
 process.on('exit', () => { globalThis.fetch = originalFetch; });
 const { validateInput, validatePull, sourcePath, selectFindings, collectThreads, api,
   snapshot, budgetPolicy, reserve, validateReservation, validateScan, scanDirectory, applyEdits, generate, publish,
-  providerFrom, chatRequest, requestEdits, SYSTEM_PROMPT, MODEL_BASE_URLS, schema,
+  providerFrom, chatRequest, requestEdits, usageSidecar, SYSTEM_PROMPT, MODEL_BASE_URLS, schema,
   startProxy, claudeArguments, fixBranch, attemptRef, KODY, LIMITS, MODEL, BUDGET_CLI_MODEL,
   BUDGET_PROXY_LIMITS } = fleet;
 const head = 'a'.repeat(40);
@@ -731,6 +731,53 @@ test('generation writes only a validated answer and never sends GitHub or unrela
     await assert.rejects(generate(data, join(dir, 'bad-url.json'), { ...env, MODEL_API_KEY: 'fixture-only',
       KODY_MODEL_BASE_URL: 'https://evil.example/v1' }, reservationFor(data), scanReceipt(data),
     async () => assert.fail('Unreviewed endpoints must never be called.')), /base URL/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
+test('usage sidecar reports the provider usage block as counts only', async () => {
+  const usage = { prompt_tokens: 1000, completion_tokens: 200, total_tokens: 1200,
+    prompt_tokens_details: { cached_tokens: 400 }, completion_tokens_details: { reasoning_tokens: 50 } };
+  assert.deepEqual(usageSidecar({ model: 'MiniMax-M3', usage, choices: [{ finish_reason: 'stop' }] }, provider, 321), {
+    schema: 1, model: 'MiniMax-M3', inputTokens: 600, outputTokens: 200, cacheReadTokens: 400, reasoningTokens: 50,
+    durationMs: 321, outcome: 'complete' });
+  assert.equal(usageSidecar({ model: 'x' }, provider, 1), null);
+  assert.equal(usageSidecar({ usage: [] }, provider, 1), null);
+  const hostile = usageSidecar({ usage: { prompt_tokens: -1, completion_tokens: 'many', prompt_tokens_details: { cached_tokens: 9 } },
+    choices: [{ finish_reason: 'length' }] }, provider, -4);
+  assert.deepEqual(hostile, { schema: 1, model: MODEL, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, reasoningTokens: 0,
+    durationMs: 0, outcome: 'incomplete' });
+  assert(!JSON.stringify(usageSidecar({ usage, choices: [{ message: { content: 'ANSWER-TEXT' } }] }, provider, 1)).includes('ANSWER-TEXT'));
+});
+test('usage is recorded before validation can reject the answer and a failing recorder changes nothing', async () => {
+  const seen = [];
+  const withUsage = (content, finish = 'stop') => completion(content, { usage: { prompt_tokens: 10, completion_tokens: 5 },
+    choices: [{ index: 0, finish_reason: finish, message: { role: 'assistant', content } }] });
+  const request = chatRequest(MODEL, packageData(), 'https://ai-gateway.vercel.sh/v1');
+  await assert.rejects(requestEdits('fixture-only', provider, request, async () => withUsage('{"edits":[]}', 'length'), console.error, () => {},
+    (result, ms) => seen.push([result.usage.completion_tokens, ms >= 0])), /did not finish/);
+  assert.deepEqual(seen, [[5, true]]);
+  const edits = answer();
+  assert.deepEqual(await requestEdits('fixture-only', provider, request, async () => withUsage(JSON.stringify(edits)), console.error, () => {},
+    () => { throw new Error('recorder broke'); }), edits);
+});
+test('generation leaves a usage sidecar beside the answer, even when the answer is then rejected', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'fleet-offline-usage-'));
+  const data = packageData(), edits = answer();
+  const withUsage = (content) => completion(content, { usage: { prompt_tokens: 120, completion_tokens: 30 } });
+  try {
+    await generate(data, join(dir, 'answer.json'), { ...env, MODEL_API_KEY: 'fixture-only' }, reservationFor(data), scanReceipt(data),
+      async () => withUsage(JSON.stringify(edits)));
+    const sidecar = JSON.parse(await readFile(join(dir, 'usage.json'), 'utf8'));
+    assert.equal(sidecar.inputTokens, 120); assert.equal(sidecar.outputTokens, 30); assert.equal(sidecar.outcome, 'complete');
+    assert(!JSON.stringify(sidecar).includes('fixture-only'));
+    await rm(join(dir, 'usage.json'));
+    const escaped = answer(); escaped.edits[0].path = 'src/other.ts';
+    await assert.rejects(generate(data, join(dir, 'escaped.json'), { ...env, MODEL_API_KEY: 'fixture-only' },
+      reservationFor(data), scanReceipt(data), async () => withUsage(JSON.stringify(escaped))));
+    assert.equal(JSON.parse(await readFile(join(dir, 'usage.json'), 'utf8')).outputTokens, 30);
+    await rm(join(dir, 'usage.json'));
+    await generate(data, join(dir, 'answer.json'), { ...env, MODEL_API_KEY: 'fixture-only' }, reservationFor(data), scanReceipt(data),
+      async () => completion(JSON.stringify(edits)));
+    await assert.rejects(access(join(dir, 'usage.json')));
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
 test('CLI configuration removes tools, hooks, session state, and unrelated settings', () => {
