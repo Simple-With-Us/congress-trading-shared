@@ -229,7 +229,9 @@ export function aiTokensFromGeminiUsage(usage: GeminiSdkUsageMetadata): AiUsageT
 }
 
 /**
- * Best-effort shape detection.  Accepts a bare usage object or a whole response carrying
+ * Best-effort shape detection.  A bare `{ input_tokens, output_tokens }` with no cache or detail
+ * fields is read as Anthropic;  that is safe for an OpenAI Responses object too, because without
+ * `input_tokens_details` there is no cached count to subtract and both readings are identical.  Accepts a bare usage object or a whole response carrying
  * `usage` (Anthropic/OpenAI) or `usageMetadata` (Gemini).  Returns null when unrecognised.
  */
 export function detectAiSdkUsageShape(value: unknown): AiSdkUsageShape | null {
@@ -294,7 +296,12 @@ export interface BuildAiUsageOptions {
  */
 export function buildAiUsage(options: BuildAiUsageOptions): AiUsage {
   const fromSdk = options.usage == null ? null : aiTokensFromSdkUsage(options.usage, options.usageShape);
-  const tokens = { ...(fromSdk ?? {}), ...(options.tokens ?? {}) };
+  // Explicit tokens win, but an explicit `undefined` must not erase an SDK count or reach the
+  // strict schema as a non-number.
+  const tokens: AiUsageTokens = { ...(fromSdk ?? {}) };
+  for (const [key, value] of Object.entries(options.tokens ?? {}) as Array<[keyof AiUsageTokens, number | undefined]>) {
+    if (value != null) tokens[key] = value;
+  }
   const response = asObject(options.usage);
   const responseModel =
     typeof response?.model === "string"

@@ -226,6 +226,17 @@ describe("buildAiUsage", () => {
     expect(aiUsageTotalTokens(block.tokens)).toBe(100);
   });
 
+  it("ignores explicit undefined tokens instead of failing or erasing SDK counts", () => {
+    expect(buildAiUsage({ tokens: { input: undefined } })).toEqual({});
+    expect(buildAiUsage({ usage: { prompt_tokens: 5, completion_tokens: 6 }, tokens: { input: undefined } }))
+      .toEqual({ tokens: { input: 5, output: 6 } });
+  });
+
+  it("reads a bare input/output pair identically under either SDK reading", () => {
+    const bare = { input_tokens: 100, output_tokens: 50 };
+    expect(aiTokensFromSdkUsage(bare)).toEqual(aiTokensFromOpenAiUsage(bare));
+  });
+
   it("lets explicit tokens win and omits empty fields", () => {
     expect(buildAiUsage({ usage: { prompt_tokens: 5, completion_tokens: 6 }, tokens: { output: 9 } }))
       .toEqual({ tokens: { input: 5, output: 9 } });
