@@ -7,8 +7,9 @@ import { createServer } from 'node:http';
 import { sourcePath, parseProfile, assertSafeText } from './profiles.mjs';
 export { sourcePath } from './profiles.mjs';
 import { createBudgetedProvider } from './budget.mjs';
+import { writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import {
   blobSchema,
@@ -379,11 +380,32 @@ function parseProviderContent(content, provider) {
   try { return JSON.parse(fence[1]); }
   catch { fail('MiniMax returned malformed JSON; no proposal was published.'); }
 }
-export async function requestEdits(key, provider, body, fetcher = fetch, report = console.error, beforeRequest = () => {}) {
+// Usage Monitor metering (UM-1593).  A pure view of the provider's own usage block, written beside
+// the answer so a key-free job can report it.  It holds counts and a model id, never prompt text.
+export function usageSidecar(result, provider, durationMs) {
+  const usage = result?.usage;
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return null;
+  const count = (value) => (Number.isSafeInteger(value) && value >= 0 && value <= 10_000_000_000 ? value : 0);
+  // OpenAI-compatible usage counts cached tokens inside prompt_tokens;  report them separately.
+  const cached = count(usage.prompt_tokens_details?.cached_tokens);
+  const prompt = count(usage.prompt_tokens);
+  return {
+    schema: 1,
+    model: typeof result.model === 'string' && result.model.trim() ? result.model.trim().slice(0, 120) : provider.model,
+    inputTokens: Math.max(0, prompt - cached),
+    outputTokens: count(usage.completion_tokens),
+    cacheReadTokens: Math.min(cached, prompt),
+    reasoningTokens: count(usage.completion_tokens_details?.reasoning_tokens),
+    durationMs: Number.isSafeInteger(durationMs) && durationMs >= 0 ? durationMs : 0,
+    outcome: result.choices?.[0]?.finish_reason === 'stop' ? 'complete' : 'incomplete',
+  };
+}
+export async function requestEdits(key, provider, body, fetcher = fetch, report = console.error, beforeRequest = () => {}, onResult = () => {}) {
   assert(typeof key === 'string' && key.length > 0, 'MODEL_API_KEY is missing; activation is incomplete.');
   const payload = JSON.stringify(body);
   assert(Buffer.byteLength(payload) <= LIMITS.requestBytes, 'Request exceeded the pilot bound.');
   beforeRequest();
+  const startedAt = Date.now();
   const response = await fetcher(provider.url, {
     method: 'POST', redirect: 'error', signal: AbortSignal.timeout(LIMITS.modelMs),
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
@@ -396,6 +418,8 @@ export async function requestEdits(key, provider, body, fetcher = fetch, report 
     fail('Provider request failed; no proposal was published.');
   }
   const result = JSON.parse(await boundedText(response));
+  // Record what the provider billed before any validation can reject the answer.
+  try { onResult(result, Date.now() - startedAt); } catch { /* metering never changes the outcome */ }
   validateMiniMaxResponse(result, provider, report);
   const choice = result?.choices?.[0];
   assert(result?.choices?.length === 1 && choice?.finish_reason === 'stop', 'Provider did not finish one complete answer.');
@@ -494,8 +518,12 @@ export async function generate(snapshot, outputPath, env, reservation, scanRecei
   const provider = providerFrom(env);
   assert(env.MODEL_API_KEY, 'MODEL_API_KEY is missing; activation is incomplete.');
   const modelBaseUrl = env.KODY_MODEL_BASE_URL || DEFAULT_MODEL_BASE_URL;
+  const recordUsage = (result, durationMs) => {
+    const sidecar = usageSidecar(result, provider, durationMs);
+    if (sidecar) writeFileSync(join(dirname(outputPath), 'usage.json'), JSON.stringify(sidecar), { mode: 0o600 });
+  };
   const answer = await requestEdits(env.MODEL_API_KEY, provider, chatRequest(provider.model, snapshot, modelBaseUrl), fetcher, console.error,
-    () => { validateReservation(reservation,snapshot,env); validateScan(scanReceipt,snapshot); });
+    () => { validateReservation(reservation,snapshot,env); validateScan(scanReceipt,snapshot); }, recordUsage);
   applyEdits(snapshot, answer);
   const text = JSON.stringify(answer);
   assert(Buffer.byteLength(text) <= LIMITS.outputBytes, 'Answer exceeded the pilot bound.');
