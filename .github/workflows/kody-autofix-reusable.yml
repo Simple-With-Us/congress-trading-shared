@@ -43,6 +43,9 @@ on:
       MODEL_API_KEY:
         description: Provider key for model_base_url, forwarded explicitly by the caller
         required: true
+      USAGE_INGEST_TOKEN:
+        description: Usage Monitor ingest token scoped to the ci-autofix producer, forwarded explicitly by the caller.  Optional;  without it the usage report is skipped.
+        required: false
 
 permissions: {}
 
@@ -233,6 +236,15 @@ jobs:
             ${{ runner.temp }}/kody-autofix/answer-scan.json
           if-no-files-found: error
           retention-days: 1
+      # Token counts and a model id only, written by the helper from the provider's own usage block.
+      # Uploaded even when generation or scanning failed, because the provider may still have billed.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: kody-usage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/kody-autofix/usage.json
+          if-no-files-found: ignore
+          retention-days: 1
 
   publish:
     needs: [prepare, reserve, generate]
@@ -277,3 +289,31 @@ jobs:
         run: node trusted-helper/.github/kody-autofix/fleet.mjs publish "$RUNNER_TEMP/kody-autofix"
         env:
           GH_TOKEN: ${{ github.token }}
+
+  # Best-effort metering (UM-1593).  Holds no provider key and no write permission;  a missing
+  # USAGE_INGEST_TOKEN or a missing usage file makes it a quiet no-op, and it cannot fail the run.
+  meter:
+    needs: [prepare, generate]
+    if: ${{ always() && needs.generate.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      actions: read
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        continue-on-error: true
+        with:
+          name: kody-usage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/kody-autofix
+      - name: Report Usage To Usage Monitor
+        continue-on-error: true
+        uses: Simple-With-Us/congress-trading-shared/.github/actions/ci-usage-report@d06ac2d47bc3b9182ea43deee9f0a91ffdf33ab0
+        with:
+          token: ${{ secrets.USAGE_INGEST_TOKEN }}
+          harness: kody
+          input-file: ${{ runner.temp }}/kody-autofix/usage.json
+          input-kind: kody
+          model: ${{ inputs.model }}
+          pr-number: ${{ needs.prepare.outputs.pr_number }}
+          step: generate
+          workflow: kody-autofix-reusable

@@ -67,6 +67,7 @@ name: Claude Code Autofix (Reusable)
 #       uses: Simple-With-Us/congress-trading-shared/.github/workflows/codex-autofix-reusable.yml@<merge sha>
 #       secrets:
 #         MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+#         USAGE_INGEST_TOKEN: ${{ secrets.USAGE_INGEST_TOKEN }}   # optional:  meters spend in Usage Monitor
 #       with:
 #         prompt: |
 #           <repo-specific fixer policy>
@@ -103,6 +104,9 @@ on:
     secrets:
       MINIMAX_API_KEY:
         required: true
+      USAGE_INGEST_TOKEN:
+        required: false
+        description: "Usage Monitor ingest token scoped to the ci-autofix producer.  Optional:  when it is absent the usage report is skipped."
       GH_PAT:
         required: false
         description: "Ignored (owner 2026-10-11).  Kept declared only so callers that still pass it do not fail;  the workflow uses the built-in GITHUB_TOKEN."
@@ -161,6 +165,21 @@ jobs:
         if: ${{ always() }}
         id: diagnostics
         uses: Simple-With-Us/congress-trading-shared/.github/actions/autofix-diagnostics@58e3d9504e458b259d065789034f0d625e66324b
+
+      - name: Report Usage To Usage Monitor
+        # Best-effort metering (UM-1593).  Reads the SDK transcript the action wrote, posts one usage
+        # event, and never fails the job:  an absent USAGE_INGEST_TOKEN makes it a quiet no-op.
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: Simple-With-Us/congress-trading-shared/.github/actions/ci-usage-report@d06ac2d47bc3b9182ea43deee9f0a91ffdf33ab0
+        with:
+          token: ${{ secrets.USAGE_INGEST_TOKEN }}
+          harness: claude-code-ci
+          input-file: ${{ runner.temp }}/claude-execution-output.json
+          input-kind: claude
+          model: ${{ inputs.model }}
+          pr-number: ${{ github.event.pull_request.number || github.event.inputs.pr }}
+          workflow: codex-autofix-reusable
 
       - name: Retain Sanitized Autofix Diagnostics
         if: ${{ always() && steps.diagnostics.outputs.summary-path != '' }}
