@@ -35,7 +35,8 @@ event `quantity` (with `unit: "token"`).  Use `aiUsageTotalTokens(tokens)`.
 1. **One event per request (or per turn) carries `ai.tokens`.**  Do not split a request into one
    event per token type, and do not repeat the same `ai.tokens` on a sibling cost event.  Usage
    Monitor sums `ai.tokens` across events, so a repeat is a double count.
-2. Send `metricType: "usage"`, `unit: "token"`, `quantity` = total billed tokens, `requests: 1`.
+2. Send `metricType: "usage"`, `unit: "token"`, `quantity` = total billed tokens, `requests: 1`
+   for one model call.  A run or window summary sets `requests` to its call count (see below).
    Put `costUsd` on the same event when you have it, and say where it came from in `ai.costSource`.
 3. Keep the model in `producerKeyRef` as today if you already do;  Usage Monitor prices by
    `ai.model.served`, then `ai.model.requested`, then `producerKeyRef`.
@@ -183,8 +184,12 @@ the old keys onto the same `_ai*` keys at ingest, so both aggregate the same way
 prices the canonical tokens, including the 1-hour cache-write rate, by `ai.model.served`, then
 `ai.model.requested`, then `producerKeyRef`.
 
-Each event that carries the typed block also becomes one row in Usage Monitor's per-request
-`AiRequest` store (UM-1590), which backs the request-performance view (duration and TTFT
-percentiles, tokens per second, cache-hit ratio).  Legacy-mapped events do not, because they are
-token slices or window totals rather than single requests.  Migrating is what puts a producer in
-that view.
+Each single-request event that carries the typed block also becomes one row in Usage Monitor's
+per-request `AiRequest` store (UM-1590), which backs the request-performance view (duration and
+TTFT percentiles, tokens per second, cache-hit ratio).  An event counts as a single request when
+`requests` is absent or `1` and it has no `windowStart` / `windowEnd`.  **An event that sums
+several model calls (a whole agent run, a CI job, a collection window) must say so:**  set
+`requests` to the number of calls when known, or set `requests: 0` on every row of the summary,
+or give the window.  It is still aggregated and priced the same way, but it stays out of the
+per-request view, where one run's total duration would read as one slow request.  Legacy-mapped
+events never get a row, because they are token slices or window totals.
