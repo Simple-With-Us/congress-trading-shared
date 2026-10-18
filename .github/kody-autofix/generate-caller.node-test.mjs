@@ -311,4 +311,6 @@ test('fleet caller pins the published MiniMax workflow without changing its disp
   assert.match(fleetYaml, /model: 'MiniMax-M3'\n/);
   assert.match(fleetYaml, /model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
   assert.match(fleetYaml, /MODEL_API_KEY: \$\{\{ secrets\.MINIMAX_API_KEY \}\}/);
+  // The Usage Monitor ingest token must be forwarded too, else `meter` silently reports nothing.
+  assert.match(fleetYaml, /USAGE_INGEST_TOKEN: \$\{\{ secrets\.USAGE_INGEST_TOKEN \}\}/);
 });
