@@ -120,26 +120,37 @@ export function contextFromEnv(env) {
   };
 }
 
-/** Build the v2 batch, or null when there is nothing trustworthy to report. */
-export function buildBatch(context, summary, now = new Date()) {
+/** The UM-1592 token buckets for one row.  Undifferentiated cache writes count as 5-minute writes. */
+function canonicalTokens(row) {
+  const written = row.cacheWrite ?? 0;
+  const split5m = row.cacheWrite5m ?? null;
+  const split1h = row.cacheWrite1h ?? null;
+  const cacheWrite1h = split1h ?? 0;
+  const cacheWrite5m = split5m === null && split1h === null
+    ? written
+    : (split5m ?? 0) + Math.max(0, written - (split5m ?? 0) - (split1h ?? 0));
+  return { input: row.input, output: row.output, cacheRead: row.cacheRead, cacheWrite5m, cacheWrite1h,
+    ...(row.reasoning === undefined || row.reasoning === null ? {} : { reasoning: row.reasoning }) };
+}
+
+/**
+ * Build the v2 batch, or null when there is nothing trustworthy to report.
+ *
+ * `canonical` carries the typed UM-1592 `ai` block.  A monitor that has not yet adopted the block
+ * rejects such an event (the schema is strict), so `legacy` carries the same facts as the
+ * pre-UM-1592 metadata keys every monitor accepts and newer ones map onto the canonical keys.
+ */
+export function buildBatch(context, summary, now = new Date(), shape = 'canonical') {
   if (!summary || !HARNESSES.has(context.harness) || !context.repo || !context.runId) return null;
   const events = summary.models.slice(0, 8).map((row, index) => {
-    const cacheWrite = row.cacheWrite ?? 0;
-    const total = row.input + row.output + row.cacheRead + cacheWrite;
+    const tokens = canonicalTokens(row);
+    const total = tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite5m + tokens.cacheWrite1h;
     // The CLI prices every model it does not know at a default Anthropic rate, so a figure for a
     // non-Anthropic model is only a hint.  Only an Anthropic-served model's cost goes in costUsd.
     const trustedCost = row.costUsd !== null && /^claude-/.test(row.model);
+    // One run is one duration:  record it on the first model only so a sum is not inflated.
+    const durationMs = index === 0 && summary.durationMs !== null ? summary.durationMs : null;
     const metadata = {
-      'ai.schemaRef': 'UM-1592-draft',
-      'ai.harness': context.harness,
-      'ai.model.requested': context.requestedModel || row.model,
-      'ai.model.served': row.model,
-      'ai.tokens.input': row.input,
-      'ai.tokens.output': row.output,
-      'ai.tokens.cacheRead': row.cacheRead,
-      'ai.tokens.cacheWrite': cacheWrite,
-      'ai.billingMode': 'payg',
-      'ai.tokenSource': summary.source,
       ci: true,
       repo: context.repo,
       runId: context.runId,
@@ -147,19 +158,14 @@ export function buildBatch(context, summary, now = new Date()) {
       step: context.step,
       outcome: summary.outcome,
       failed: summary.isError,
+      tokenSource: summary.source,
       runUrl: `${context.server}/${context.repo}/actions/runs/${context.runId}`,
     };
-    if (row.cacheWrite5m !== undefined && row.cacheWrite5m !== null) metadata['ai.tokens.cacheWrite5m'] = row.cacheWrite5m;
-    if (row.cacheWrite1h !== undefined && row.cacheWrite1h !== null) metadata['ai.tokens.cacheWrite1h'] = row.cacheWrite1h;
-    if (row.reasoning !== undefined && row.reasoning !== null) metadata['ai.tokens.reasoning'] = row.reasoning;
-    // One run is one duration:  record it on the first model only so a sum is not inflated.
-    if (index === 0 && summary.durationMs !== null) metadata['ai.durationMs'] = summary.durationMs;
     if (index === 0 && summary.turns !== null) metadata.turns = summary.turns;
     if (context.prNumber !== null) metadata.prNumber = context.prNumber;
     if (context.workflow) metadata.workflow = context.workflow;
-    if (trustedCost) metadata['ai.costSource'] = 'estimated';
-    else if (row.costUsd !== null) metadata['ai.cliReportedCostUsd'] = row.costUsd;
-    return {
+    if (!trustedCost && row.costUsd !== null) metadata.cliReportedCostUsd = row.costUsd;
+    const event = {
       eventId: `${context.repo}:${context.runId}:${context.runAttempt}:${context.step}:${row.model}`.slice(0, 200),
       provider: context.provider,
       service: 'ci-autofix',
@@ -174,7 +180,39 @@ export function buildBatch(context, summary, now = new Date()) {
       ...(trustedCost ? { costUsd: row.costUsd } : {}),
       confidence: trustedCost ? 'estimated' : 'actual',
       occurredAt: now.toISOString(),
-      metadata,
+    };
+    if (shape === 'canonical') {
+      return {
+        ...event,
+        ai: {
+          model: { requested: (context.requestedModel || row.model).slice(0, 160), served: row.model.slice(0, 160) },
+          harness: context.harness,
+          tokens,
+          ...(durationMs === null ? {} : { durationMs }),
+          billingMode: 'payg',
+          ...(trustedCost ? { costSource: 'estimated' } : {}),
+        },
+        metadata,
+      };
+    }
+    // Legacy keys.  The prompt figure includes cache reads and writes in this vocabulary, and the
+    // monitor subtracts them again, so add them back to the uncached input.
+    const cached = tokens.cacheRead + tokens.cacheWrite5m + tokens.cacheWrite1h;
+    return {
+      ...event,
+      metadata: {
+        ...metadata,
+        harness: context.harness,
+        billingMode: 'payg',
+        model: row.model,
+        promptTokens: tokens.input + cached,
+        completionTokens: tokens.output,
+        cachedTokens: tokens.cacheRead,
+        cacheWriteTokens: tokens.cacheWrite5m,
+        cacheWriteOneHourTokens: tokens.cacheWrite1h,
+        ...(tokens.reasoning === undefined ? {} : { reasoningTokens: tokens.reasoning }),
+        ...(durationMs === null ? {} : { latencyMs: durationMs }),
+      },
     };
   });
   if (events.length === 0) return null;
@@ -183,7 +221,10 @@ export function buildBatch(context, summary, now = new Date()) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** POST with a short bounded retry.  Resolves to a status string and never rejects or logs the token. */
+/**
+ * POST with a short bounded retry.  Resolves to `{ ok, status, ack }` and never rejects or logs the
+ * credential.  `ack` holds the monitor's acknowledgement counts when it sent them.
+ */
 export async function postBatch(batch, token, { fetchImpl = fetch, url = INGEST_URL, wait = sleep } = {}) {
   let last = 'no_attempt';
   for (let attempt = 1; attempt <= POST_ATTEMPTS; attempt += 1) {
@@ -200,17 +241,23 @@ export async function postBatch(batch, token, { fetchImpl = fetch, url = INGEST_
         body: JSON.stringify(batch),
       });
       if (response.ok) {
-        const ack = await response.json().catch(() => ({}));
-        return `ok received=${ack.received ?? '?'} persisted=${ack.persisted ?? '?'} duplicates=${ack.duplicates ?? '?'} rejected=${ack.rejected ?? '?'}`;
+        const body = await response.json().catch(() => ({}));
+        const ack = {};
+        for (const key of ['received', 'persisted', 'duplicates', 'rejected']) {
+          ack[key] = Number.isSafeInteger(body?.[key]) ? body[key] : null;
+        }
+        const show = (value) => value ?? '?';
+        return { ok: true, ack,
+          status: `ok received=${show(ack.received)} persisted=${show(ack.persisted)} duplicates=${show(ack.duplicates)} rejected=${show(ack.rejected)}` };
       }
       last = `http_${response.status}`;
-      if (response.status !== 429 && response.status < 500) return last;
+      if (response.status !== 429 && response.status < 500) return { ok: false, status: last, ack: null };
     } catch (error) {
       last = `network_${error?.name === 'TimeoutError' ? 'timeout' : 'error'}`;
     }
     if (attempt < POST_ATTEMPTS) await wait(attempt * 1000);
   }
-  return last;
+  return { ok: false, status: last, ack: null };
 }
 
 function readResultFile(path) {
@@ -232,12 +279,19 @@ export async function run(env = process.env, options = {}) {
     const summary = kind === 'claude' ? extractClaude(raw, context.requestedModel)
       : kind === 'kody' ? extractKody(raw, context.requestedModel) : null;
     if (!summary) return '::notice::usage report skipped:  no usage in the result file';
-    const batch = buildBatch(context, summary);
+    const batch = buildBatch(context, summary, new Date(), 'canonical');
     if (!batch) return '::notice::usage report skipped:  nothing to report';
-    const status = await postBatch(batch, token, options);
-    return status.startsWith('ok')
-      ? `::notice::usage report ${status}`
-      : `::warning::usage report not delivered (${status})`;
+    let sent = await postBatch(batch, token, options);
+    let fallback = '';
+    // A monitor that predates the canonical block rejects the event (it stores nothing and
+    // acknowledges rejected > 0).  Nothing was stored, so the same event ids are safe to resend
+    // with the pre-UM-1592 metadata keys.
+    if (sent.ok && sent.ack.rejected > 0) {
+      sent = await postBatch(buildBatch(context, summary, new Date(), 'legacy'), token, options);
+      fallback = ' (legacy keys;  the monitor does not accept the canonical ai block yet)';
+    }
+    if (sent.ok && !(sent.ack.rejected > 0)) return `::notice::usage report ${sent.status}${fallback}`;
+    return `::warning::usage report not delivered (${sent.status})${fallback}`;
   } catch {
     return '::warning::usage report failed';
   }
