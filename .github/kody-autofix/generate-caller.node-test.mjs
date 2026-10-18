@@ -286,7 +286,7 @@ test('provider model and endpoint options are validated and match the helper all
   assert.equal(String(MODEL_PATTERN), String(fleet.MODEL_PATTERN));
   assert.match(yaml, /      model:\n[\s\S]*?default: MiniMax-M3\n/);
   assert.match(yaml, /      model_base_url:\n[\s\S]*?default: https:\/\/api\.minimax\.io\/v1\n/);
-  assert.equal([...yaml.matchAll(/ref: 'b1503884e547a8fb5d1449a94e03cae8c496da4c'/g)].length, 4);
+  assert.equal([...yaml.matchAll(/ref: 'd06ac2d47bc3b9182ea43deee9f0a91ffdf33ab0'/g)].length, 4);
   const native = generateCaller(valid({ model: 'muse-spark-1.3-contributor', 'model-base-url': 'https://api.meta.ai/v1' }));
   assert.match(native, /model: 'muse-spark-1\.3-contributor'\n      model_base_url: 'https:\/\/api\.meta\.ai\/v1'\n/);
   const oldGateway = generateCaller(valid({ model: 'minimax/minimax-m3', 'model-base-url': 'https://ai-gateway.vercel.sh/v1' }));
