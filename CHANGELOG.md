@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `.github/workflows/codex-autofix-reusable.yml` (display name "Claude Code Autofix (Reusable)") now routes claude-code-action to MiniMax (`https://api.minimax.io/anthropic`, org secret `MINIMAX_API_KEY`) instead of DeepSeek, adds a `model` input (default `MiniMax-M3.1-Flash-Preview`), and acts on Codex, Kody and Cursor reviews by default.  Callers must pass `MINIMAX_API_KEY` and use the shared `pr-autofix-${{ github.repository }}-<PR>` concurrency group (see the workflow header).
 
+## [2.8.0] — 2026-10-17
+
+### Added
+- Canonical AI usage block for usage telemetry v2 (UM-1592):  an optional, strict `ai` field on every v2 event with `model.{requested,served}`, `harness`, `seat`, `tokens.{input,output,cacheRead,cacheWrite5m,cacheWrite1h,reasoning}`, `durationMs`, `ttftMs`, `billingMode` (`subscription`/`payg`/`free`) and `costSource` (`billed`/`estimated`).  Additive:  events without `ai` are unchanged.  Schemas and types in `src/aiUsage.ts`.
+- `buildAiUsage` and `aiTokensFromAnthropicUsage` / `aiTokensFromOpenAiUsage` / `aiTokensFromGeminiUsage` / `aiTokensFromSdkUsage` build the block from Anthropic `usage` (with the `cache_creation` 5-minute/1-hour split), OpenAI Chat Completions and Responses `usage` (cached and reasoning tokens, DeepSeek cache hits) and Gemini `usageMetadata`.  `aiUsageTotalTokens` sums the billed buckets.
+- `docs/ai-usage-schema.md`:  field semantics and per-producer migration instructions.
+
+### Changed
+- `USAGE_TELEMETRY_PRODUCERS` now lists every fleet producer id (botfleet, codecaps, claude-code, openai-codex, grok-build, github-copilot, minimax-code, deepseek-dsh, opencode, fx, antigravity-cli, antigravity-statusline, cursor-agent, cursor-admin, muse, muse-code, gbu, mac-host, fleet-usage-collector, admin-usage-poller, manual-billing-adjustment).
+- `USAGE_TELEMETRY_KNOWN_PROVIDERS` adds minimax, deepseek, xai, moonshot, github-copilot and cursor.
+
 ## [2.7.0] — 2026-09-15
 
 ### Added
