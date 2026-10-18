@@ -180,4 +180,11 @@ them directly):  `_aiModelRequested`, `_aiModelServed`, `_aiHarness`, `_aiSeat`,
 `_aiTokensReasoning`, `_aiDurationMs`, `_aiTtftMs`, `_aiBillingMode`, `_aiCostSource`, and
 `_aiSource` (`block` or `legacy`).  Events from producers that have not migrated are mapped from
 the old keys onto the same `_ai*` keys at ingest, so both aggregate the same way.  Cost derivation
-prices the canonical tokens, including the 1-hour cache-write rate.
+prices the canonical tokens, including the 1-hour cache-write rate, by `ai.model.served`, then
+`ai.model.requested`, then `producerKeyRef`.
+
+Each event that carries the typed block also becomes one row in Usage Monitor's per-request
+`AiRequest` store (UM-1590), which backs the request-performance view (duration and TTFT
+percentiles, tokens per second, cache-hit ratio).  Legacy-mapped events do not, because they are
+token slices or window totals rather than single requests.  Migrating is what puts a producer in
+that view.
