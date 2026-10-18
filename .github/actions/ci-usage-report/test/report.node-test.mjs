@@ -87,6 +87,19 @@ test('a cache write split is carried as 5-minute and 1-hour buckets, and leftove
   const [leftover] = buildBatch(contextFromEnv(baseEnv), extractClaude(JSON.stringify(partial), 'm')).events;
   assert.equal(leftover.ai.tokens.cacheWrite5m, 250);
   assert.equal(leftover.ai.tokens.cacheWrite1h, 100);
+
+  // A split larger than the reported total is malformed input, not extra usage.
+  const inflated = { ...bare, usage: { ...bare.usage, cache_creation_input_tokens: 150, cache_creation: { ephemeral_5m_input_tokens: 200, ephemeral_1h_input_tokens: 100 } } };
+  const [clamped] = buildBatch(contextFromEnv(baseEnv), extractClaude(JSON.stringify(inflated), 'm')).events;
+  assert.equal(clamped.ai.tokens.cacheWrite5m + clamped.ai.tokens.cacheWrite1h, 150);
+  assert.equal(clamped.quantity, 100 + 50 + 4000 + 150);
+
+  // Even a lone 1-hour bucket larger than the total must not over-report.
+  const huge1h = { ...bare, usage: { ...bare.usage, cache_creation_input_tokens: 120, cache_creation: { ephemeral_1h_input_tokens: 5000 } } };
+  const [oneHour] = buildBatch(contextFromEnv(baseEnv), extractClaude(JSON.stringify(huge1h), 'm')).events;
+  assert.equal(oneHour.ai.tokens.cacheWrite1h, 120);
+  assert.equal(oneHour.ai.tokens.cacheWrite5m, 0);
+  assert.equal(oneHour.quantity, 100 + 50 + 4000 + 120);
 });
 
 test('the legacy shape carries the same facts as the pre-UM-1592 metadata keys', () => {
@@ -217,6 +230,8 @@ test('run reports end to end, survives bad input, and does not print the token',
     assert.equal(bodies.length, 2);
     assert.equal(bodies[1].events[0].metadata.completionTokens, 50);
     assert.equal(bodies[0].events[0].eventId, bodies[1].events[0].eventId);
+    // The fallback is the same event in another shape, so it keeps the same timestamp.
+    assert.equal(bodies[0].events[0].occurredAt, bodies[1].events[0].occurredAt);
 
     // Rejected both ways is a warning, never a failure.
     const hostile = await run(env, { fetchImpl: async () => new Response(JSON.stringify({ ok: true, received: 1, persisted: 0, duplicates: 0, rejected: 1 })) });

@@ -125,10 +125,18 @@ function canonicalTokens(row) {
   const written = row.cacheWrite ?? 0;
   const split5m = row.cacheWrite5m ?? null;
   const split1h = row.cacheWrite1h ?? null;
-  const cacheWrite1h = split1h ?? 0;
-  const cacheWrite5m = split5m === null && split1h === null
-    ? written
-    : (split5m ?? 0) + Math.max(0, written - (split5m ?? 0) - (split1h ?? 0));
+  // Clamp the 1-hour bucket first so the over-count direction can never inflate the total:  a
+  // malformed split must not report more cache writes than the run actually wrote.
+  let cacheWrite1h = Math.min(split1h ?? 0, written);
+  let cacheWrite5m = split5m ?? 0;
+  if (split5m === null && split1h === null) {
+    cacheWrite5m = written;
+    cacheWrite1h = 0;
+  } else if (cacheWrite5m + cacheWrite1h > written) {
+    cacheWrite5m = Math.max(0, written - cacheWrite1h);
+  } else if (cacheWrite5m + cacheWrite1h < written) {
+    cacheWrite5m += written - cacheWrite5m - cacheWrite1h;
+  }
   return { input: row.input, output: row.output, cacheRead: row.cacheRead, cacheWrite5m, cacheWrite1h,
     ...(row.reasoning === undefined || row.reasoning === null ? {} : { reasoning: row.reasoning }) };
 }
@@ -279,7 +287,10 @@ export async function run(env = process.env, options = {}) {
     const summary = kind === 'claude' ? extractClaude(raw, context.requestedModel)
       : kind === 'kody' ? extractKody(raw, context.requestedModel) : null;
     if (!summary) return '::notice::usage report skipped:  no usage in the result file';
-    const batch = buildBatch(context, summary, new Date(), 'canonical');
+    // One `now` for both shapes:  the fallback is the same logical event resent, so it must carry
+    // the same `occurredAt` or the (producerId, eventId, occurredAt) dedup key drifts.
+    const now = new Date();
+    const batch = buildBatch(context, summary, now, 'canonical');
     if (!batch) return '::notice::usage report skipped:  nothing to report';
     let sent = await postBatch(batch, token, options);
     let fallback = '';
@@ -287,7 +298,7 @@ export async function run(env = process.env, options = {}) {
     // acknowledges rejected > 0).  Nothing was stored, so the same event ids are safe to resend
     // with the pre-UM-1592 metadata keys.
     if (sent.ok && sent.ack.rejected > 0) {
-      sent = await postBatch(buildBatch(context, summary, new Date(), 'legacy'), token, options);
+      sent = await postBatch(buildBatch(context, summary, now, 'legacy'), token, options);
       fallback = ' (legacy keys;  the monitor does not accept the canonical ai block yet)';
     }
     if (sent.ok && !(sent.ack.rejected > 0)) return `::notice::usage report ${sent.status}${fallback}`;
