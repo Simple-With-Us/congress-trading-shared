@@ -36,8 +36,9 @@ test('offline caller defaults to no paid attempts and no implicit enablement', (
   assert.match(caller, /repository_id: '123456789'\n/);
   assert.match(caller, /source_prefixes: '\["src\/","server\/"\]'\n/);
   // The provider key is forwarded explicitly and only once; secrets are never inherited.
-  assert(caller.endsWith("    secrets:\n      MODEL_API_KEY: ${{ secrets.MINIMAX_API_KEY }}\n"));
-  assert.equal((caller.match(/secrets\./g) ?? []).length, 1);
+  assert(caller.endsWith("    secrets:\n      MODEL_API_KEY: ${{ secrets.MINIMAX_API_KEY }}\n      USAGE_INGEST_TOKEN: ${{ secrets.USAGE_INGEST_TOKEN }}\n"));
+  // The only other forwarded secret is the optional Usage Monitor ingest token (UM-1593).
+  assert.equal((caller.match(/secrets\./g) ?? []).length, 2);
   assert(!caller.includes('secrets: inherit'));
   assert.match(caller, /^name: Kody MiniMax M3 Fix Proposals$/m);
   assert.match(caller, /model: 'MiniMax-M3'\n/);
@@ -136,9 +137,13 @@ test('all dependency actions and shared helper checkouts use immutable pinned ve
     ['actions/upload-artifact', 'cf430e030ddbb5b0abf93d22962f4752f3646cd9'],
     ['actions/download-artifact', '9000827ccba6bdab643e8b6fd33ac0654aef8333'],
   ]);
+  // The usage reporter (UM-1593) lives in this repository, so it is pinned to a published commit of its own.
+  const reporter = 'Simple-With-Us/congress-trading-shared/.github/actions/ci-usage-report';
   for (const match of yaml.matchAll(/uses: ([^\s]+)@([^\s]+)/g)) {
-    assert.equal(match[2], expected.get(match[1]), `Unexpected action or pin ${match[0]}`);
+    if (match[1] === reporter) assert.match(match[2], /^[a-f0-9]{40}$/, `Unpinned reporter ${match[0]}`);
+    else assert.equal(match[2], expected.get(match[1]), `Unexpected action or pin ${match[0]}`);
   }
+  assert.equal((yaml.match(/uses: Simple-With-Us\/congress-trading-shared\/\.github\/actions\/ci-usage-report@/g) ?? []).length, 1);
   const refs = [...yaml.matchAll(/ref: '([a-f0-9]{40})'/g)].map(match => match[1]);
   assert.equal(refs.length, 4);
   assert.equal(new Set(refs).size, 1);
@@ -170,7 +175,8 @@ test('split-privilege jobs never expose write credentials in generation', () => 
   assert(!job('generate').includes('GH_TOKEN:'));
   assert(!job('generate').includes('GITHUB_TOKEN:'));
   assert.equal((yaml.match(/GH_TOKEN:/g) ?? []).length, 3);
-  assert.equal((yaml.match(/secrets\./g) ?? []).length, 2);
+  // MODEL_API_KEY twice (required check and generation step) plus the optional ingest token in `meter`.
+  assert.equal((yaml.match(/secrets\./g) ?? []).length, 3);
   assert.match(job('generate'), /environment: kody-autofix/);
   assert.match(job('generate'), /MODEL_API_KEY: \$\{\{ secrets\.MODEL_API_KEY \}\}/);
   assert.match(job('generate'), /KODY_MODEL: \$\{\{ inputs\.model \}\}/);
@@ -178,7 +184,15 @@ test('split-privilege jobs never expose write credentials in generation', () => 
   assert.match(yaml, /    secrets:\n      MODEL_API_KEY:\n        description: [^\n]+\n        required: true\n/);
   assert(!yaml.includes('secrets: inherit'));
   assert(!yaml.includes('GH_PAT'));
-  assert(!yaml.includes('token: ${{ secrets.'));
+  // No GitHub credential is ever passed as a token input.  The one `token:` is the optional Usage Monitor
+  // ingest credential, which only the key-free `meter` job sees, so it can neither push nor reach the provider key.
+  assert.deepEqual(yaml.match(/token: \$\{\{ secrets\.[A-Z_]+ \}\}/g), ['token: ${{ secrets.USAGE_INGEST_TOKEN }}']);
+  assert.match(job('meter'), /token: \$\{\{ secrets\.USAGE_INGEST_TOKEN \}\}/);
+  assert.match(permissions(job('meter')), /^\s*actions: read\s*$/);
+  assert(!permissions(job('meter')).includes('write'));
+  assert(!job('meter').includes('MODEL_API_KEY'));
+  assert(!job('meter').includes('environment:'));
+  assert.match(yaml, /      USAGE_INGEST_TOKEN:\n        description: [^\n]+\n        required: false\n/);
 });
 
 test('generate requires a forwarded provider credential before checkout or scans', () => {
@@ -214,14 +228,21 @@ test('verified fixed scanner runs before the sole provider-key step', () => {
 });
 
 test('artifact transport is run-scoped, required, short lived, and isolated under runner.temp', () => {
-  assert.equal((yaml.match(/retention-days: 1/g) ?? []).length, 3);
+  // Context, reservation, and answer are required;  the usage counts are optional because a run that
+  // failed before the provider answered has none.
+  assert.equal((yaml.match(/retention-days: 1/g) ?? []).length, 4);
   assert.equal((yaml.match(/if-no-files-found: error/g) ?? []).length, 3);
-  for (const match of yaml.matchAll(/name: (kody-(?:context|reservation|answer)-.*)/g)) {
+  assert.equal((yaml.match(/if-no-files-found: ignore/g) ?? []).length, 1);
+  for (const match of yaml.matchAll(/name: (kody-(?:context|reservation|answer|usage)-.*)/g)) {
     assert(match[1].includes('${{ github.run_id }}-${{ github.run_attempt }}'));
   }
   assert(!yaml.includes('merge-multiple: true'));
   assert(!yaml.includes('pattern:'));
-  assert.equal((yaml.match(/path: \$\{\{ runner\.temp \}\}\/kody-autofix/g) ?? []).length, 8);
+  // Eight context transports, plus the usage upload (generate) and its download (meter).
+  assert.equal((yaml.match(/path: \$\{\{ runner\.temp \}\}\/kody-autofix/g) ?? []).length, 10);
+  assert.match(job('generate'), /- uses: actions\/upload-artifact@[a-f0-9]{40} # v7\.0\.2\n        if: always\(\)\n        with:\n          name: kody-usage-/);
+  assert.match(job('meter'), /needs: \[prepare, generate\]/);
+  assert.match(job('meter'), /if: \$\{\{ always\(\) && needs\.generate\.result != 'skipped' \}\}/);
   assert.match(job('reserve'), /needs: prepare/);
   assert.match(job('reserve'), /if: needs\.prepare\.outputs\.eligible == 'true'/);
   assert.match(job('generate'), /if: needs\.reserve\.outputs\.reserved == 'true'/);

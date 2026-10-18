@@ -136,6 +136,7 @@ jobs:
       model_base_url: ${yamlString(config.modelBaseUrl)}
     secrets:
       MODEL_API_KEY: \${{ secrets.${config.apiKeySecret} }}
+      USAGE_INGEST_TOKEN: \${{ secrets.USAGE_INGEST_TOKEN }}
 `;
 }
 
