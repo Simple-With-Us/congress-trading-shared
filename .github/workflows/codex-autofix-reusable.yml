@@ -126,6 +126,8 @@ jobs:
     # this autofix convenience loop would simply not start; that is accepted.
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      usage: ${{ steps.usage.outputs.json }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -166,20 +168,19 @@ jobs:
         id: diagnostics
         uses: Simple-With-Us/congress-trading-shared/.github/actions/autofix-diagnostics@58e3d9504e458b259d065789034f0d625e66324b
 
-      - name: Report Usage To Usage Monitor
-        # Best-effort metering (UM-1593).  Reads the SDK transcript the action wrote, posts one usage
-        # event, and never fails the job:  an absent USAGE_INGEST_TOKEN makes it a quiet no-op.
+      - name: Extract Usage Counts
+        id: usage
+        # Only the counters of Claude Code's final result message leave this job (UM-1593):  no prompt,
+        # diff, or tool output.  The ingest credential is never present here, because the model runs
+        # with Bash in this job and could rewrite any file on the runner, including a cached action.
         if: ${{ always() }}
         continue-on-error: true
-        uses: Simple-With-Us/congress-trading-shared/.github/actions/ci-usage-report@d06ac2d47bc3b9182ea43deee9f0a91ffdf33ab0
-        with:
-          token: ${{ secrets.USAGE_INGEST_TOKEN }}
-          harness: claude-code-ci
-          input-file: ${{ runner.temp }}/claude-execution-output.json
-          input-kind: claude
-          model: ${{ inputs.model }}
-          pr-number: ${{ github.event.pull_request.number || github.event.inputs.pr }}
-          workflow: codex-autofix-reusable
+        run: |
+          f="$RUNNER_TEMP/claude-execution-output.json"
+          if [ -f "$f" ] && [ ! -L "$f" ]; then
+            json=$(jq -c '[.[] | select(.type == "result")] | last // empty | {type, subtype, is_error, duration_ms, num_turns, total_cost_usd, usage, modelUsage}' "$f" 2> /dev/null || true)
+            if [ -n "$json" ] && [ "${#json}" -lt 100000 ]; then echo "json=$json" >> "$GITHUB_OUTPUT"; fi
+          fi
 
       - name: Retain Sanitized Autofix Diagnostics
         if: ${{ always() && steps.diagnostics.outputs.summary-path != '' }}
@@ -189,3 +190,30 @@ jobs:
           path: ${{ steps.diagnostics.outputs.summary-path }}
           if-no-files-found: error
           retention-days: 7
+
+  # Best-effort metering (UM-1593).  It holds the optional ingest credential, so it runs apart from
+  # the job that executes the model.  With no token, or no usage counts, it does nothing and cannot
+  # fail the run.
+  meter:
+    needs: autofix
+    if: ${{ always() && needs.autofix.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions: {}
+    steps:
+      - name: Stage Usage Counts
+        env:
+          USAGE_JSON: ${{ needs.autofix.outputs.usage }}
+        run: |
+          if [ -n "$USAGE_JSON" ]; then printf '%s\n' "$USAGE_JSON" > "$RUNNER_TEMP/usage-result.json"; fi
+      - name: Report Usage To Usage Monitor
+        continue-on-error: true
+        uses: Simple-With-Us/congress-trading-shared/.github/actions/ci-usage-report@65f9ff5a5b1f7a68e729205c14f5ef3e59be561a
+        with:
+          token: ${{ secrets.USAGE_INGEST_TOKEN }}
+          harness: claude-code-ci
+          input-file: ${{ runner.temp }}/usage-result.json
+          input-kind: claude
+          model: ${{ inputs.model }}
+          pr-number: ${{ github.event.pull_request.number || github.event.inputs.pr }}
+          workflow: codex-autofix-reusable
