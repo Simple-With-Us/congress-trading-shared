@@ -307,7 +307,7 @@ test('provider model and endpoint options are validated and match the helper all
 
 test('fleet caller pins the published MiniMax workflow without changing its display name', () => {
   assert.match(fleetYaml, /^name: Kody MiniMax M3 Fix Proposals$/m);
-  assert.match(fleetYaml, /kody-autofix-reusable\.yml@488c83ee8ed7c1c8479769905f96cfb54e1cbbe9/);
+  assert.match(fleetYaml, /kody-autofix-reusable\.yml@31659885f58f08e129b6dc092f3493d7cdb74a11/);
   assert.match(fleetYaml, /model: 'MiniMax-M3'\n/);
   assert.match(fleetYaml, /model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
   assert.match(fleetYaml, /MODEL_API_KEY: \$\{\{ secrets\.MINIMAX_API_KEY \}\}/);
