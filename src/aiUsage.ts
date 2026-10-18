@@ -134,7 +134,7 @@ function count(value: unknown): number | undefined {
   return Math.max(0, Math.round(value));
 }
 
-function compactTokens(tokens: Record<keyof AiUsageTokens, number | undefined>): AiUsageTokens {
+function compactTokens(tokens: Partial<Record<keyof AiUsageTokens, number | undefined>>): AiUsageTokens {
   const out: AiUsageTokens = {};
   for (const [key, value] of Object.entries(tokens) as Array<[keyof AiUsageTokens, number | undefined]>) {
     if (value != null) out[key] = value;
@@ -294,7 +294,9 @@ export interface BuildAiUsageOptions {
  */
 export function buildAiUsage(options: BuildAiUsageOptions): AiUsage {
   const fromSdk = options.usage == null ? null : aiTokensFromSdkUsage(options.usage, options.usageShape);
-  const tokens = { ...(fromSdk ?? {}), ...(options.tokens ?? {}) };
+  // Compact the explicit tokens before merging so an `undefined` there cannot overwrite (and
+  // thereby erase) a value already read from the SDK usage, which would undercount billed tokens.
+  const tokens = { ...(fromSdk ?? {}), ...(options.tokens == null ? {} : compactTokens(options.tokens)) };
   const response = asObject(options.usage);
   const responseModel =
     typeof response?.model === "string"
