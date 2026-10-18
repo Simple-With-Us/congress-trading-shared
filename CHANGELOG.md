@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `.github/workflows/codex-autofix-reusable.yml` (display name "Claude Code Autofix (Reusable)") now routes claude-code-action to MiniMax (`https://api.minimax.io/anthropic`, org secret `MINIMAX_API_KEY`) instead of DeepSeek, adds a `model` input (default `MiniMax-M3.1-Flash-Preview`), and acts on Codex, Kody and Cursor reviews by default.  Callers must pass `MINIMAX_API_KEY` and use the shared `pr-autofix-${{ github.repository }}-<PR>` concurrency group (see the workflow header).
 
+## [2.8.1] — 2026-10-17
+
+### Fixed
+- `buildAiUsage` ignores an explicit `undefined` in `tokens` instead of throwing a ZodError or erasing the count read from the SDK usage (review finding on #378).
+
 ## [2.8.0] — 2026-10-17
 
 ### Added
