@@ -18,7 +18,13 @@ Keep the local reusable path and its default unchanged.  Preserve the Bot/same-r
 - Isolated YAML parsing and before/after caller contract assertions: passed.
 - Actual caller-expression evaluation: 13 cases passed, including the eight admitted actor spellings, both Sentry fork cases, unsupported event rejection, human rejection and manual dispatch.
 - Reusable `allowed_bots` passthrough and pinned diagnostics dependency: fetched and verified.
-- Package tests and build were not run locally in the connector-backed fixture lane; current-head hosted checks remain required.
+- `npm run typecheck` (the package's `tsc --noEmit` script): not run locally; passed in hosted CI for the workflow-identical revision `a75c00d3d9cfa92aa57ffaca69496dd33aed2e53`.
+- `npm run build`: not run locally; passed in that hosted run.
+- `npm run lint:package`: not run locally; passed in that hosted run.  This package has no `npm run lint` script.
+- `npm test`: not run locally; passed in that hosted run.
+- `npm audit`: not run locally; passed in that hosted run.
+- `npm run pack:dry`: not run locally; passed in that hosted run.
+- Receipt: [CI run 39190320779](https://github.com/Simple-With-Us/congress-trading-shared/actions/runs/39190320779).  Dependency-signature verification and the clean tokenless Git install smoke also passed.  The final documentation revision still requires its own [current-head PR checks](https://github.com/Simple-With-Us/congress-trading-shared/pull/387/checks).
 - No live paid autofix dispatch performed.
 
 ## Next Steps And Blockers
