@@ -27,6 +27,6 @@ Keep the local reusable path and its default unchanged.  Preserve the Bot/same-r
 - Receipt: [CI run 39190320779](https://github.com/Simple-With-Us/congress-trading-shared/actions/runs/39190320779).  Dependency-signature verification and the clean tokenless Git install smoke also passed.  The final documentation revision still requires its own [current-head PR checks](https://github.com/Simple-With-Us/congress-trading-shared/pull/387/checks).
 - No live paid autofix dispatch performed.
 
-## Next Steps And Blockers
+## Follow-ups
 
 Review the draft PR and current-head checks before merge, then observe a genuine Sentry review run.  This lane does not merge, arm auto-merge or deploy.
