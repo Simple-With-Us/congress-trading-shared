@@ -111,6 +111,11 @@ test('the local caller forwards only secrets the vendored reusable declares', as
   const guard = workflow.match(/- name: Validate Model Switch[\s\S]*?(?=\n      - name:)/)?.[0] ?? '';
   assert.ok(guard, 'the reusable must validate the model switch before running the action');
   assert.ok(guard.indexOf('Run Claude Autofix') === -1, 'guard slice must stop before the action step');
+  // The guard has to be able to stop the run:  a step carrying
+  // continue-on-error, or an if: that evaluates false, satisfies every text
+  // assertion above while exit 1 no longer fails the job.
+  assert.ok(!guard.includes('continue-on-error'), 'the guard must be able to fail the run');
+  assert.ok(!/^\s*if:/m.test(guard), 'the guard must always run');
   assert.match(guard, /"" \| https:\/\/api\.minimax\.io\/anthropic\) route=minimax ;;/, 'an unset base or the canonical MiniMax host must stay on MiniMax');
   assert.match(guard, /\[ "\$route" = "meta" \] && \[ -n "\$VAR_MODEL" \] && \[ -n "\$META_TOKEN" \] && \[ "\$model_minimax" = "no" \]/, 'the Meta host must require an explicit non-MiniMax model id and a provisioned Meta token');
   assert.match(guard, /\[Mm\]\[Ii\]\[Nn\]\[Ii\]\[Mm\]\[Aa\]\[Xx\]\*\) model_minimax=yes ;;/, 'a MiniMax model id must be detected case-insensitively');
