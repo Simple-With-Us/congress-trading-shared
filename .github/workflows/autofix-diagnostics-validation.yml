@@ -9,8 +9,6 @@ on:
       - '.github/workflows/claude-code-autofix.yml'
       - '.github/workflows/autofix.yml'
       - '.github/workflows/autofix-diagnostics-validation.yml'
-      - 'package.json'
-      - 'package-lock.json'
   push:
     branches: [main]
     paths:
@@ -20,8 +18,6 @@ on:
       - '.github/workflows/claude-code-autofix.yml'
       - '.github/workflows/autofix.yml'
       - '.github/workflows/autofix-diagnostics-validation.yml'
-      - 'package.json'
-      - 'package-lock.json'
   workflow_dispatch: {}
 
 permissions:
@@ -39,7 +35,10 @@ jobs:
         with:
           node-version: 24
       - name: Install Test Dependencies
-        run: npm ci --ignore-scripts
+        # Scoped install (Kody on cts #394):  the test needs only its parser
+        # and schema packages,  and a full npm ci could eat the five-minute
+        # job budget on unrelated dependency changes.
+        run: npm install --no-save --no-audit --no-fund yaml@2 zod@4
       - name: Test Sanitization And Failure Wiring
         run: node --test .github/actions/autofix-diagnostics/test/reduce.node-test.mjs .github/autofix-diagnostics-workflow.node-test.mjs
       - name: Simulate A Capped Run Without A Model Call
