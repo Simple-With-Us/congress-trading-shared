@@ -27,13 +27,18 @@ import {
   treeSchema,
 } from './github-schemas.mjs';
 
+// The response byte bound and the provider window scale with the largest output budget
+// below, so neither of them binds before the token cap does.
 export const LIMITS = Object.freeze({ files: 5, findings: 8, fileBytes: 64_000, contextBytes: 180_000,
-  edits: 12, replacementBytes: 24_000, outputBytes: 180_000, requests: 1, requestBytes: 256_000,
-  outputTokens: 32_768, modelMs: 240_000 });
-// 32k output: M3.1 Flash has no thinking-off switch (HTTP 400) and runs its
-// default max reasoning effort (owner 2026-10-20: fleet effort default is max);
-// reasoning is billed inside completion_tokens, so the retired 16k cap returned
-// finish_reason 'length' before the proposal text.
+  edits: 12, replacementBytes: 24_000, outputBytes: 360_000, requests: 1, requestBytes: 256_000,
+  outputTokens: 16_384, modelMs: 300_000 });
+// The native MiniMax M3.1 family gets the larger output budget: M3.1 Flash has no
+// thinking-off switch (HTTP 400) and runs its default max reasoning effort (owner
+// 2026-10-20: fleet effort default is max); reasoning is billed inside
+// completion_tokens, so the shared 16k cap returned finish_reason 'length' before the
+// proposal text.  Every other allowlisted provider keeps the shared 16k cap, because a
+// max_tokens above a model ceiling is rejected with HTTP 400.
+export const MINIMAX_OUTPUT_TOKENS = 32_768;
 export const KODY = Object.freeze({ login: 'kody-ai', id: 'BOT_kgDOCN-7SQ' });
 // MiniMax M3.1 Flash through MiniMax's OpenAI-compatible chat completions (owner 2026-10-20).
 export const MODEL = 'MiniMax-M3.1-Flash';
@@ -340,8 +345,10 @@ export function providerFrom(env) {
 }
 export function chatRequest(model, snapshot, modelBaseUrl = DEFAULT_MODEL_BASE_URL) {
   const isNativeMiniMax = modelBaseUrl === 'https://api.minimax.io/v1' && model.startsWith('MiniMax-');
+  // Only the M3.1 family is known to accept the larger budget on the native API.
+  const maxTokens = isNativeMiniMax && model.startsWith('MiniMax-M3.1') ? MINIMAX_OUTPUT_TOKENS : LIMITS.outputTokens;
   return {
-    model, max_tokens: LIMITS.outputTokens, stream: false,
+    model, max_tokens: maxTokens, stream: false,
     // M3.1 Flash answers HTTP 400 to thinking: {type: "disabled"} (the retired M3 needed it);
     // reasoning arrives split instead (BotFleet server/drivers/minimax.ts).
     ...(isNativeMiniMax ? { reasoning_split: true } : {}),

@@ -20,7 +20,7 @@ const { validateInput, validatePull, sourcePath, selectFindings, collectThreads,
   snapshot, budgetPolicy, reserve, validateReservation, validateScan, scanDirectory, applyEdits, generate, publish,
   providerFrom, chatRequest, requestEdits, usageSidecar, SYSTEM_PROMPT, MODEL_BASE_URLS, schema,
   startProxy, claudeArguments, fixBranch, attemptRef, KODY, LIMITS, MODEL, BUDGET_CLI_MODEL,
-  BUDGET_PROXY_LIMITS } = fleet;
+  BUDGET_PROXY_LIMITS, MINIMAX_OUTPUT_TOKENS } = fleet;
 const head = 'a'.repeat(40);
 const treeSha = 'b'.repeat(40);
 const blobSha = 'e'.repeat(40);
@@ -469,7 +469,7 @@ test('provider configuration accepts only reviewed endpoints and strict model id
 test('chat request is tool-free, bounded, schema-shaped, and carries only approved source', () => {
   const data = packageData(); const body = chatRequest(MODEL, data);
   assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'reasoning_split', 'stream']);
-  assert.equal(body.max_tokens, LIMITS.outputTokens); assert.equal(body.stream, false);
+  assert.equal(body.max_tokens, MINIMAX_OUTPUT_TOKENS); assert.equal(body.stream, false);
   assert.equal(body.reasoning_split, true);
   assert.equal(body.thinking, undefined);
   assert.equal(body.tools, undefined); assert.equal(body.tool_choice, undefined);
@@ -484,7 +484,14 @@ test('chat request is tool-free, bounded, schema-shaped, and carries only approv
   assert.equal(gatewayRequest.messages[0].content, SYSTEM_PROMPT);
   assert.equal(gatewayRequest.thinking, undefined);
   assert.equal(gatewayRequest.reasoning_split, undefined);
+  assert.equal(gatewayRequest.max_tokens, LIMITS.outputTokens);
   assert.deepEqual(gatewayRequest.response_format.json_schema.schema, schema);
+});
+test('the largest output budget fits the response byte bound', () => {
+  // A token budget the byte bound cannot hold would fail closed after the provider billed.
+  assert.ok(LIMITS.outputBytes >= MINIMAX_OUTPUT_TOKENS * 4);
+  assert.equal(LIMITS.outputTokens, 16_384);
+  assert.equal(MINIMAX_OUTPUT_TOKENS, 32_768);
 });
 test('scan receipt pins tool version, exact snapshot/answer, and fifteen-minute freshness', () => {
   const data = packageData(), edits = answer(), now = Date.now();
@@ -618,12 +625,15 @@ test('native MiniMax-M3.1-Flash splits reasoning and validates base_resp before 
   const request = chatRequest(minimax.model, packageData(), 'https://api.minimax.io/v1');
   assert.equal(request.reasoning_split, true);
   assert.equal(request.thinking, undefined);
+  assert.equal(request.max_tokens, MINIMAX_OUTPUT_TOKENS);
   assert.equal(request.messages[0].content, SYSTEM_PROMPT);
   assert(request.messages[0].content.includes(JSON.stringify(schema)));
   assert.equal(request.response_format, undefined);
   const otherNativeModel = chatRequest('MiniMax-M2.7-highspeed', packageData(), 'https://api.minimax.io/v1');
   assert.equal(otherNativeModel.reasoning_split, true);
   assert.equal(otherNativeModel.thinking, undefined);
+  // Only the M3.1 family is known to accept the larger budget.
+  assert.equal(otherNativeModel.max_tokens, LIMITS.outputTokens);
   const gatewayMiniMax = chatRequest('minimax/minimax-m3', packageData(), 'https://ai-gateway.vercel.sh/v1');
   assert.equal(gatewayMiniMax.reasoning_split, undefined);
   assert.equal(gatewayMiniMax.thinking, undefined);
