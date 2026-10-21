@@ -69,7 +69,11 @@ test('the local caller forwards only secrets the vendored reusable declares', ()
   // The org model switch needs the Meta token declared and forwarded.
   assert.match(declared, /META_MODEL_API_TOKEN:\n {8}required: false/);
   assert.match(passed, /META_MODEL_API_TOKEN: \$\{\{ secrets\.META_MODEL_API_TOKEN \}\}/);
-  assert.match(model, /ANTHROPIC_BASE_URL: \$\{\{ vars\.SWU_AUTOFIX_MODEL_BASE_URL/);
+  // The switch itself:  the endpoint and the model id come from the org
+  // variables, and the credential keeps both branches.  The expressions are
+  // not pinned literally, so an endpoint preset can replace the free-form URL.
+  assert.match(model, /ANTHROPIC_BASE_URL: .*vars\.SWU_AUTOFIX_MODEL/);
   assert.match(model, /ANTHROPIC_AUTH_TOKEN: .*secrets\.META_MODEL_API_TOKEN.*secrets\.MINIMAX_API_KEY/);
-  assert.match(model, /ANTHROPIC_MODEL: \$\{\{ vars\.SWU_AUTOFIX_MODEL \|\| inputs\.model \}\}/);
+  assert.match(model, /ANTHROPIC_MODEL: .*vars\.SWU_AUTOFIX_MODEL.*inputs\.model/);
+  assert.match(model, /ANTHROPIC_SMALL_FAST_MODEL: .*vars\.SWU_AUTOFIX_MODEL.*inputs\.model/);
 });
