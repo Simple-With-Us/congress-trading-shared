@@ -110,7 +110,8 @@ test('the local caller forwards only secrets the vendored reusable declares', as
   assert.ok(guard, 'the reusable must validate the model switch before running the action');
   assert.ok(guard.indexOf('Run Claude Autofix') === -1, 'guard slice must stop before the action step');
   assert.match(guard, /if \[ -z "\$VAR_BASE" \]; then exit 0; fi/, 'an unset base must stay on MiniMax');
-  assert.match(guard, /"\$VAR_BASE" = "https:\/\/api\.meta\.ai" \] && \[ -n "\$VAR_MODEL"/, 'the Meta host must require an explicit Meta model id');
+  assert.match(guard, /"\$VAR_BASE" = "https:\/\/api\.meta\.ai" \] && \[ -n "\$VAR_MODEL" \] && \[ -n "\$META_TOKEN"/, 'the Meta host must require an explicit Meta model id and a provisioned Meta token');
+  assert.match(guard, /META_MODEL_API_TOKEN provisioned/, 'the failure message must name META_MODEL_API_TOKEN');
   assert.match(guard, /exit 1/, 'any other base/model combination must fail fast');
   // The endpoint and the credential are a closed pair:  the only hosts the
   // switch can name are the two presets,  and the credential follows the host
