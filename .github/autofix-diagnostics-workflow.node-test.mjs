@@ -61,10 +61,28 @@ test('the local caller forwards only secrets the vendored reusable declares', ()
   const declared = workflow.slice(workflow.indexOf('    secrets:'), workflow.indexOf('\npermissions:'));
   const passed = caller.slice(caller.indexOf('    secrets:'), caller.indexOf('\n    with:'));
   const declaredNames = new Set([...declared.matchAll(/^ {6}([A-Z][A-Z0-9_]*):$/gm)].map(match => match[1]));
-  const passedNames = [...passed.matchAll(/^ {6}([A-Z][A-Z0-9_]*): \$\{\{ secrets\./gm)].map(match => match[1]);
+  // Both the forwarded name and the secret it maps to are captured, so a
+  // mapping written in another shape is counted as unparsed instead of being
+  // skipped, and a name wired to the wrong secret is caught here.
+  const passedEntries = [...passed.matchAll(/^ {6}([A-Z][A-Z0-9_]*): \$\{\{ secrets\.([A-Z][A-Z0-9_]*) \}\}$/gm)];
+  const passedNames = passedEntries.map(match => match[1]);
   assert.ok(passedNames.length > 0);
-  for (const name of passedNames) {
+  assert.equal(
+    passedNames.length,
+    (passed.match(/^ {6}[A-Z][A-Z0-9_]*:/gm) ?? []).length,
+    'a forwarded secret mapping was not parsed',
+  );
+  for (const [, name, secret] of passedEntries) {
     assert.ok(declaredNames.has(name), `the caller passes ${name}, which the reusable does not declare`);
+    assert.equal(name, secret, `${name} is forwarded from secrets.${secret}`);
+  }
+  // The other direction matters too:  a secret the reusable marks required must
+  // be forwarded, because GitHub refuses to run the reusable when a required
+  // secret is missing.
+  const requiredNames = [...declared.matchAll(/^ {6}([A-Z][A-Z0-9_]*):\n {8}required: true$/gm)].map(match => match[1]);
+  assert.ok(requiredNames.length > 0);
+  for (const name of requiredNames) {
+    assert.ok(passedNames.includes(name), `the caller must forward ${name}, which the reusable requires`);
   }
   // The org model switch needs the Meta token declared and forwarded.
   assert.match(declared, /META_MODEL_API_TOKEN:\n {8}required: false/);
@@ -97,4 +115,23 @@ test('the local caller forwards only secrets the vendored reusable declares', ()
   const metaCredential = metaBranch.slice(0, minimaxFallback);
   assert.ok(metaCredential.includes('secrets.META_MODEL_API_TOKEN'));
   assert.match(metaCredential, /secrets\.META_MODEL_API_TOKEN \|\| 'MISSING-[A-Z-]+'/, 'a Meta run without the Meta credential must fail closed');
+  // The other caller of the fleet's reusable workflow is external and pinned by
+  // SHA, so its declarations cannot be read from this repo.  The pin and the
+  // forwarded secret names are therefore expected together here:  a pin bump
+  // fails this test until the external declarations were re-checked and this
+  // expectation was updated with them.
+  const external = readFileSync(new URL('./workflows/autofix.yml', import.meta.url), 'utf8');
+  const externalPin = external.match(/pr-autofix-reusable\.yml@([a-f0-9]{40})/);
+  assert.ok(externalPin, 'the external fleet reusable must stay pinned by SHA');
+  assert.equal(
+    externalPin[1],
+    'e37a3e3055fb616dbc0aaa1c2f127d8b34edbf46',
+    'the external reusable pin changed:  re-check that it still declares every secret this caller forwards, then update this expectation',
+  );
+  assert.deepEqual(
+    [...external.matchAll(/^ {6}([A-Z][A-Z0-9_]*): \$\{\{ secrets\./gm)].map(match => match[1]).sort(),
+    ['AUTOFIX_GITHUB_APP_PRIVATE_KEY', 'META_MODEL_API_TOKEN', 'MINIMAX_API_KEY', 'USAGE_INGEST_TOKEN'],
+    'the secrets forwarded to the external reusable changed:  re-check the external declarations, then update this expectation',
+  );
+  assert.match(external, /META_MODEL_API_TOKEN: \$\{\{ secrets\.META_MODEL_API_TOKEN \}\}/);
 });
