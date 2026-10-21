@@ -181,8 +181,17 @@ jobs:
           # marker, and without an author filter any commenter could forge a
           # marker to block a bot's one run (Sentry on cts #395).
           marker="swu-autofix-run: bot=$requester"
-          prior=$(gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments?per_page=100" --paginate \
-            --jq ".[] | select(.user.login == \"github-actions[bot]\") | .body | select(contains(\"<!-- $marker -->\"))" 2> /dev/null | head -1 || true)
+          # Fail closed:  without the lookup result the one-run-per-bot record is
+          # unknown,  and a swallowed gh api error would let a bot run twice (Kody
+          # on cts #394).  The result goes through a file so pipefail cannot turn
+          # head's early close into a fake gh failure.
+          if ! gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments?per_page=100" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\") | .body | select(contains(\"<!-- $marker -->\"))" \
+            > "$RUNNER_TEMP/prior_markers.txt"; then
+            echo "::error::marker lookup failed (gh api error) - refusing to run without the one-run-per-bot record;  retry the run"
+            exit 1
+          fi
+          prior=$(head -1 "$RUNNER_TEMP/prior_markers.txt")
           accepted=true
           if [ -n "$prior" ]; then accepted=false; fi
           if [ -n "${NOTIFY_URL:-}" ]; then
@@ -200,9 +209,15 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
+          # The marker must land before the model starts,  so a write failure
+          # stops the run here with an actionable error instead of a raw gh
+          # abort (Kody on cts #394) - before any model spend.
+          if ! gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments" \
             -f body="<!-- $marker --> Autofix run $GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID started for \`$author\`'s tagged request.  One autofix run per bot per PR (owner rule 2026-10-20);  delete this comment to reset." \
-            > /dev/null
+            > /dev/null; then
+            echo "::error::could not record the one-run marker comment - the calling job must grant issues: write and the issues API must be reachable;  the run stops before billing the model"
+            exit 1
+          fi
 
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -212,6 +227,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate Model Switch
+        # A request the gate deliberately skipped has no model config to
+        # validate;  running the guard there could fail a run that was never
+        # accepted (Kody on cts #394).
+        if: ${{ steps.request_gate.outputs.skip != 'true' }}
         env:
           VAR_BASE: ${{ vars.SWU_AUTOFIX_MODEL_BASE_URL }}
           VAR_MODEL: ${{ vars.SWU_AUTOFIX_MODEL }}
