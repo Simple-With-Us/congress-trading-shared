@@ -305,7 +305,7 @@ test('provider model and endpoint options are validated and match the helper all
     assert.throws(() => validateOptions(valid({ 'model-base-url': url })), /base URL/);
 });
 
-test('fleet caller pins the published MiniMax workflow without changing its display name', () => {
+test('fleet caller pins the published MiniMax workflow with the M3.1 Flash display name', () => {
   assert.match(fleetYaml, /^name: Kody MiniMax M3.1 Flash Fix Proposals$/m);
   assert.match(fleetYaml, /kody-autofix-reusable\.yml@31659885f58f08e129b6dc092f3493d7cdb74a11/);
   assert.match(fleetYaml, /model: 'MiniMax-M3.1-Flash'\n/);
