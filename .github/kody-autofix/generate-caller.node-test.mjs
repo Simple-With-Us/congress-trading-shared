@@ -316,7 +316,7 @@ test('caller name falls back to Unknown Model for inherited object property name
 
 test('fleet caller pins the published MiniMax workflow with the M3.1 Flash display name', () => {
   assert.match(fleetYaml, /^name: Kody MiniMax M3.1 Flash Fix Proposals$/m);
-  assert.match(fleetYaml, /kody-autofix-reusable\.yml@31659885f58f08e129b6dc092f3493d7cdb74a11/);
+  assert.match(fleetYaml, /kody-autofix-reusable\.yml@917a49dfb77e4fce307a985510ab814a6f684ef6/);
   assert.match(fleetYaml, /model: 'MiniMax-M3\.1-Flash'\n/);
   assert.match(fleetYaml, /model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
   assert.match(fleetYaml, /MODEL_API_KEY: \$\{\{ secrets\.MINIMAX_API_KEY \}\}/);
