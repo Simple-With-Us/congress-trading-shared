@@ -176,17 +176,30 @@ test('the local caller forwards only secrets the vendored reusable declares', as
   // changes,  so the check reads the exact file the caller uses.
   const externalReusable = await fetch(
     `https://raw.githubusercontent.com/Simple-With-Us/AI-Fleet-Coordinator/${externalPin[1]}/.github/workflows/pr-autofix-reusable.yml`,
+    // A stalled request would hang the run to the job limit,  so the read
+    // fails fast instead.
+    { signal: AbortSignal.timeout(15_000) },
   );
   assert.ok(externalReusable.ok, 'the pinned external reusable must be readable');
   const externalReusableText = await externalReusable.text();
+  // A 200 does not prove the body is the workflow,  so the shape is checked
+  // before any value is read out of it.
+  assert.match(externalReusableText, /^jobs:/m, 'the pinned external reusable must be a workflow');
+  // Only the live env lines are asserted:  the pinned file documents caller
+  // snippets inline,  so an unanchored whole-file match could be satisfied by a
+  // commented copy while the live env still used the free-form endpoint.  The
+  // first live line wins,  the way the local guard reads its own env block.
+  const externalEnvLines = externalReusableText.split('\n').map(line => line.replace(/\r$/, ''));
+  const externalBaseUrl = externalEnvLines.find(line => /^ *ANTHROPIC_BASE_URL:/.test(line)) ?? '';
+  const externalAuthToken = externalEnvLines.find(line => /^ *ANTHROPIC_AUTH_TOKEN:/.test(line)) ?? '';
   assert.match(
-    externalReusableText,
-    /ANTHROPIC_BASE_URL: \$\{\{ vars\.SWU_AUTOFIX_MODEL_BASE_URL == 'https:\/\/api\.meta\.ai' && 'https:\/\/api\.meta\.ai'/,
+    externalBaseUrl,
+    /^ *ANTHROPIC_BASE_URL: \$\{\{ vars\.SWU_AUTOFIX_MODEL_BASE_URL == 'https:\/\/api\.meta\.ai' && 'https:\/\/api\.meta\.ai' \|\| 'https:\/\/api\.minimax\.io\/anthropic' \}\}$/,
     'the external reusable must use the closed endpoint preset, never the free-form variable',
   );
   assert.match(
-    externalReusableText,
-    /ANTHROPIC_AUTH_TOKEN: \$\{\{ vars\.SWU_AUTOFIX_MODEL_BASE_URL == 'https:\/\/api\.meta\.ai' && \(secrets\.META_MODEL_API_TOKEN \|\| 'MISSING-[A-Z-]+'\)/,
+    externalAuthToken,
+    /^ *ANTHROPIC_AUTH_TOKEN: \$\{\{ vars\.SWU_AUTOFIX_MODEL_BASE_URL == 'https:\/\/api\.meta\.ai' && \(secrets\.META_MODEL_API_TOKEN \|\| 'MISSING-[A-Z-]+'\) \|\| secrets\.MINIMAX_API_KEY \}\}$/,
     'the external reusable must fail closed when the Meta credential is absent',
   );
 });
