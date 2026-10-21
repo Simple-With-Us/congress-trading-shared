@@ -19,9 +19,10 @@ export const MODEL_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9-]{0,31}\/)?[A-Za-z0-9][A
 // Approved model identifiers map to fixed display names; every other value
 // renders as 'Unknown Model' so unparsed model text is never persisted in
 // the generated workflow name (Kody rule: reduce untrusted strings to a
-// fixed enum before use).
+// fixed enum before use).  Own-property lookup only: inherited names such
+// as 'toString' must not resolve to built-in source.
 const MODEL_DISPLAY_NAMES = Object.freeze({ 'MiniMax-M3.1-Flash': 'MiniMax M3.1 Flash' });
-const modelDisplayName = (model) => MODEL_DISPLAY_NAMES[model] ?? 'Unknown Model';
+const modelDisplayName = (model) => (Object.hasOwn(MODEL_DISPLAY_NAMES, model) ? MODEL_DISPLAY_NAMES[model] : 'Unknown Model');
 
 // Single-quoted YAML scalars also safely preserve JSON's quotes and backslashes.
 export const yamlString = (value) => `'${String(value).replaceAll("'", "''")}'`;
