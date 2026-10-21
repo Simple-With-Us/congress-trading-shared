@@ -45,12 +45,9 @@ export const MINIMAX_OUTPUT_TOKENS = 32_768;
 export const KODY = Object.freeze({ login: 'kody-ai', id: 'BOT_kgDOCN-7SQ' });
 // MiniMax M3.1 Flash through MiniMax's OpenAI-compatible chat completions (owner 2026-10-20).
 export const MODEL = 'MiniMax-M3.1-Flash';
-<<<<<<< HEAD
 // Only these reviewed identifiers may select the larger output budget: the configured model
 // string is untrusted input, so it must not widen the provider budget.
 export const MINIMAX_M31_MODELS = Object.freeze([MODEL]);
-=======
->>>>>>> 17b647498eaeeb45e7eb7b49eda8485de9929446
 export const DEFAULT_MODEL_BASE_URL = 'https://api.minimax.io/v1';
 export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1']);
 export const MODEL_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9-]{0,31}\/)?[A-Za-z0-9][A-Za-z0-9.-]{0,63}$/;

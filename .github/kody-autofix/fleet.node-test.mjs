@@ -469,11 +469,7 @@ test('provider configuration accepts only reviewed endpoints and strict model id
 test('chat request is tool-free, bounded, schema-shaped, and carries only approved source', () => {
   const data = packageData(); const body = chatRequest(MODEL, data);
   assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'reasoning_split', 'stream']);
-<<<<<<< HEAD
   assert.equal(body.max_tokens, MINIMAX_OUTPUT_TOKENS); assert.equal(body.stream, false);
-=======
-  assert.equal(body.max_tokens, LIMITS.outputTokens); assert.equal(body.stream, false);
->>>>>>> 17b647498eaeeb45e7eb7b49eda8485de9929446
   assert.equal(body.reasoning_split, true);
   assert.equal(body.thinking, undefined);
   assert.equal(body.tools, undefined); assert.equal(body.tool_choice, undefined);
@@ -627,14 +623,9 @@ test('provider request is one bounded call with the key only in its authorizatio
   assert.equal(JSON.parse(options.body).max_tokens, LIMITS.outputTokens);
   assert.equal(JSON.parse(options.body).reasoning_split, undefined);
 });
-<<<<<<< HEAD
 test('native MiniMax-M3.1-Flash splits reasoning and validates base_resp before parsing edits', async () => {
   // M3.1 Flash answers HTTP 400 to thinking: {type: "disabled"} (the retired M3 needed it).
   const minimax = { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3.1-Flash' };
-=======
-test('native MiniMax M3 disables thinking and validates base_resp before parsing edits', async () => {
-  const minimax = { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3' };
->>>>>>> 17b647498eaeeb45e7eb7b49eda8485de9929446
   const request = chatRequest(minimax.model, packageData(), 'https://api.minimax.io/v1');
   assert.equal(request.reasoning_split, true);
   assert.equal(request.thinking, undefined);
@@ -642,12 +633,7 @@ test('native MiniMax M3 disables thinking and validates base_resp before parsing
   assert.equal(request.messages[0].content, SYSTEM_PROMPT);
   assert(request.messages[0].content.includes(JSON.stringify(schema)));
   assert.equal(request.response_format, undefined);
-<<<<<<< HEAD
   const otherNativeModel = chatRequest('MiniMax-M2.7-highspeed', packageData(), 'https://api.minimax.io/v1');
-=======
-  // The fleet default is M3.1 Flash, which takes reasoning_split instead of a disabled thinking block.
-  const otherNativeModel = chatRequest('MiniMax-M3.1-Flash', packageData(), 'https://api.minimax.io/v1');
->>>>>>> 17b647498eaeeb45e7eb7b49eda8485de9929446
   assert.equal(otherNativeModel.reasoning_split, true);
   assert.equal(otherNativeModel.thinking, undefined);
   // Only the reviewed M3.1 identifiers are known to accept the larger budget.
