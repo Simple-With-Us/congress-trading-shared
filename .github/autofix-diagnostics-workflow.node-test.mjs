@@ -58,6 +58,16 @@ test('usage metering happens in a separate job so the ingest credential never si
 // autofix loop, so the contract is asserted here.
 test('the local caller forwards only secrets the vendored reusable declares', () => {
   const caller = readFileSync(new URL('./workflows/claude-code-autofix.yml', import.meta.url), 'utf8');
+  // This test only runs when the diagnostics validation workflow watches the
+  // files it covers,  so the caller must stay on that watch list:  a change to
+  // the caller alone would otherwise ship an invalid secret mapping with CI
+  // green and the autofix loop disabled.
+  const validation = readFileSync(new URL('./workflows/autofix-diagnostics-validation.yml', import.meta.url), 'utf8');
+  assert.equal(
+    (validation.match(/^ {6}- '\.github\/workflows\/claude-code-autofix\.yml'$/gm) ?? []).length,
+    2,
+    'the diagnostics validation workflow must watch the caller in both its pull_request and push path lists',
+  );
   const declared = workflow.slice(workflow.indexOf('    secrets:'), workflow.indexOf('\npermissions:'));
   const passed = caller.slice(caller.indexOf('    secrets:'), caller.indexOf('\n    with:'));
   const declaredNames = new Set([...declared.matchAll(/^ {6}([A-Z][A-Z0-9_]*):$/gm)].map(match => match[1]));
@@ -108,13 +118,16 @@ test('the local caller forwards only secrets the vendored reusable declares', ()
     'the endpoint may name only the two preset hosts',
   );
   // Fail closed:  a Meta run without META_MODEL_API_TOKEN must not reach the
-  // Meta host carrying the MiniMax credential.
+  // Meta host carrying the MiniMax credential.  The whole credential expression
+  // is matched, so the MiniMax key can only appear after the Meta group
+  // closes:  a term inside that group would let a missing Meta token fall back
+  // to the MiniMax credential on the Meta host.
   const metaBranch = authToken.slice(authToken.indexOf(metaHost) + metaHost.length);
-  const minimaxFallback = metaBranch.indexOf('|| secrets.MINIMAX_API_KEY');
-  assert.ok(minimaxFallback > -1, 'the MiniMax credential must stay on the MiniMax branch');
-  const metaCredential = metaBranch.slice(0, minimaxFallback);
-  assert.ok(metaCredential.includes('secrets.META_MODEL_API_TOKEN'));
-  assert.match(metaCredential, /secrets\.META_MODEL_API_TOKEN \|\| 'MISSING-[A-Z-]+'/, 'a Meta run without the Meta credential must fail closed');
+  assert.match(
+    metaBranch,
+    /^\s*&&\s*\(secrets\.META_MODEL_API_TOKEN \|\| 'MISSING-[A-Z-]+'\)\s*\|\|\s*secrets\.MINIMAX_API_KEY/,
+    'the MiniMax credential must be the fallback of the whole expression, not a term inside the Meta branch',
+  );
   // The other caller of the fleet's reusable workflow is external and pinned by
   // SHA, so its declarations cannot be read from this repo.  The pin and the
   // forwarded secret names are therefore expected together here:  a pin bump
