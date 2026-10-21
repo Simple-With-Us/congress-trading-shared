@@ -6,6 +6,7 @@ on:
       - '.github/actions/autofix-diagnostics/**'
       - '.github/autofix-diagnostics-workflow.node-test.mjs'
       - '.github/workflows/codex-autofix-reusable.yml'
+      - '.github/workflows/claude-code-autofix.yml'
       - '.github/workflows/autofix-diagnostics-validation.yml'
   push:
     branches: [main]
@@ -13,6 +14,7 @@ on:
       - '.github/actions/autofix-diagnostics/**'
       - '.github/autofix-diagnostics-workflow.node-test.mjs'
       - '.github/workflows/codex-autofix-reusable.yml'
+      - '.github/workflows/claude-code-autofix.yml'
       - '.github/workflows/autofix-diagnostics-validation.yml'
   workflow_dispatch: {}
 
