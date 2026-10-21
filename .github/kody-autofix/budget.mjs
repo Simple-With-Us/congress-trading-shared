@@ -8,6 +8,18 @@ const PROVIDERS = Object.freeze({
   deepseek: { model: 'deepseek-flash', url: 'https://api.deepseek.com/anthropic/v1/messages', key: 'DEEPSEEK_API_KEY' },
   minimax: { model: 'MiniMax-M3.1-Flash', url: 'https://api.minimax.io/anthropic/v1/messages', key: 'MINIMAX_API_KEY' },
 });
+// Spellings the provider may echo back for the configured model.  MiniMax
+// aliases M3.1-Flash onto the runtime that the retired -Preview id named, so
+// either spelling can appear in a usage report for the same served model; a
+// strict comparison would latch `failed` after a paid request.  Requests
+// always send the configured id above regardless.
+const ECHO_MODELS = Object.freeze({
+  deepseek: Object.freeze(['deepseek-flash']),
+  minimax: Object.freeze(['MiniMax-M3.1-Flash', 'MiniMax-M3.1-Flash-Preview']),
+});
+function echoOk(provider, echoed) {
+  return (ECHO_MODELS[provider] ?? []).includes(echoed);
+}
 const sha = value => createHash('sha256').update(value).digest('hex');
 const serverClock = Symbol('budget-server-clock');
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -114,7 +126,7 @@ async function boundedFetch(fetcher, url, options, timeoutMs, maxBytes) {
 function receipt(value, requestId) {
   assert(object(value) && value.ok === true && value.requestId === requestId);
   assert(typeof value.reservationId === 'string' && value.reservationId.length > 0);
-  assert(Object.hasOwn(PROVIDERS, value.provider) && value.model === PROVIDERS[value.provider].model);
+  assert(Object.hasOwn(PROVIDERS, value.provider) && echoOk(value.provider, value.model));
   assert(/^\d{4}-\d{2}-\d{2}$/.test(value.day));
   assert(Number.isFinite(Date.parse(value.dispatchBefore)));
   assert(typeof value.maximumCostMicros === 'string' && /^\d{1,16}$/.test(value.maximumCostMicros));
@@ -158,7 +170,7 @@ export function completeUsage(provider, bytes, contentType) {
       }
       complete = started && delta && stopped;
     }
-    assert(complete && model === PROVIDERS[provider].model && object(usage));
+    assert(complete && echoOk(provider, model) && object(usage));
     assert(integer(usage.input_tokens) && integer(usage.output_tokens));
     // MiniMax documents separate uncached/read/write counters.  Explicit cache
     // writes are disallowed; unknown fields must not silently become zero.
