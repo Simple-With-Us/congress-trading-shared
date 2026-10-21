@@ -451,7 +451,7 @@ test('late concurrent source push prevents branch creation without force or roll
   assert.deepEqual(f.writes.map(w => w.path), ['git/trees', 'git/commits']);
 });
 test('provider configuration accepts only reviewed endpoints and strict model identifiers', () => {
-  assert.equal(MODEL, 'MiniMax-M3');
+  assert.equal(MODEL, 'MiniMax-M3.1-Flash');
   assert.deepEqual(providerFrom({}), { url: 'https://api.minimax.io/v1/chat/completions', model: MODEL });
   assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://api.meta.ai/v1', KODY_MODEL: 'muse-spark-1.3-contributor' }),
     { url: 'https://api.meta.ai/v1/chat/completions', model: 'muse-spark-1.3-contributor' });
@@ -468,10 +468,10 @@ test('provider configuration accepts only reviewed endpoints and strict model id
 });
 test('chat request is tool-free, bounded, schema-shaped, and carries only approved source', () => {
   const data = packageData(); const body = chatRequest(MODEL, data);
-  assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'stream', 'thinking']);
+  assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'reasoning_split', 'stream']);
   assert.equal(body.max_tokens, LIMITS.outputTokens); assert.equal(body.stream, false);
-  assert.equal(body.reasoning_split, undefined);
-  assert.deepEqual(body.thinking, { type: 'disabled' });
+  assert.equal(body.reasoning_split, true);
+  assert.equal(body.thinking, undefined);
   assert.equal(body.tools, undefined); assert.equal(body.tool_choice, undefined);
   assert.equal(body.messages[0].content, SYSTEM_PROMPT);
   assert(SYSTEM_PROMPT.includes(JSON.stringify(schema)));
@@ -612,7 +612,7 @@ test('provider request is one bounded call with the key only in its authorizatio
   assert.equal(JSON.parse(options.body).max_tokens, LIMITS.outputTokens);
   assert.equal(JSON.parse(options.body).reasoning_split, undefined);
 });
-test('native MiniMax-M3 disables thinking and validates base_resp before parsing edits', async () => {
+test('native MiniMax M3 disables thinking and validates base_resp before parsing edits', async () => {
   const minimax = { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3' };
   const request = chatRequest(minimax.model, packageData(), 'https://api.minimax.io/v1');
   assert.deepEqual(request.thinking, { type: 'disabled' });
@@ -620,7 +620,8 @@ test('native MiniMax-M3 disables thinking and validates base_resp before parsing
   assert.equal(request.messages[0].content, SYSTEM_PROMPT);
   assert(request.messages[0].content.includes(JSON.stringify(schema)));
   assert.equal(request.response_format, undefined);
-  const otherNativeModel = chatRequest('MiniMax-M3.1-Flash-Preview', packageData(), 'https://api.minimax.io/v1');
+  // The fleet default is M3.1 Flash, which takes reasoning_split instead of a disabled thinking block.
+  const otherNativeModel = chatRequest('MiniMax-M3.1-Flash', packageData(), 'https://api.minimax.io/v1');
   assert.equal(otherNativeModel.reasoning_split, true);
   assert.equal(otherNativeModel.thinking, undefined);
   const gatewayMiniMax = chatRequest('minimax/minimax-m3', packageData(), 'https://ai-gateway.vercel.sh/v1');
@@ -736,8 +737,8 @@ test('generation writes only a validated answer and never sends GitHub or unrela
 test('usage sidecar reports the provider usage block as counts only', async () => {
   const usage = { prompt_tokens: 1000, completion_tokens: 200, total_tokens: 1200,
     prompt_tokens_details: { cached_tokens: 400 }, completion_tokens_details: { reasoning_tokens: 50 } };
-  assert.deepEqual(usageSidecar({ model: 'MiniMax-M3', usage, choices: [{ finish_reason: 'stop' }] }, provider, 321), {
-    schema: 1, model: 'MiniMax-M3', inputTokens: 600, outputTokens: 200, cacheReadTokens: 400, reasoningTokens: 50,
+  assert.deepEqual(usageSidecar({ model: 'MiniMax-M3.1-Flash', usage, choices: [{ finish_reason: 'stop' }] }, provider, 321), {
+    schema: 1, model: 'MiniMax-M3.1-Flash', inputTokens: 600, outputTokens: 200, cacheReadTokens: 400, reasoningTokens: 50,
     durationMs: 321, outcome: 'complete' });
   assert.equal(usageSidecar({ model: 'x' }, provider, 1), null);
   assert.equal(usageSidecar({ usage: [] }, provider, 1), null);
