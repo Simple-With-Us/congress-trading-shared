@@ -31,8 +31,8 @@ export const LIMITS = Object.freeze({ files: 5, findings: 8, fileBytes: 64_000, 
   edits: 12, replacementBytes: 24_000, outputBytes: 180_000, requests: 1, requestBytes: 256_000,
   outputTokens: 16_384, modelMs: 240_000 });
 export const KODY = Object.freeze({ login: 'kody-ai', id: 'BOT_kgDOCN-7SQ' });
-// MiniMax M3 through MiniMax's OpenAI-compatible chat completions (owner 2026-10-11).
-export const MODEL = 'MiniMax-M3';
+// MiniMax M3.1 Flash through MiniMax's OpenAI-compatible chat completions (owner 2026-10-20).
+export const MODEL = 'MiniMax-M3.1-Flash';
 export const DEFAULT_MODEL_BASE_URL = 'https://api.minimax.io/v1';
 export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1']);
 export const MODEL_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9-]{0,31}\/)?[A-Za-z0-9][A-Za-z0-9.-]{0,63}$/;
