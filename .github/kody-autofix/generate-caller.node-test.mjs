@@ -305,6 +305,10 @@ test('provider model and endpoint options are validated and match the helper all
     assert.throws(() => validateOptions(valid({ 'model-base-url': url })), /base URL/);
 });
 
+test('caller name falls back to Unknown Model for unapproved model text', () => {
+  assert.match(generateCaller(valid({ model: 'Custom-9x' })), /^name: Kody Unknown Model Fix Proposals$/m);
+});
+
 test('fleet caller pins the published MiniMax workflow with the M3.1 Flash display name', () => {
   assert.match(fleetYaml, /^name: Kody MiniMax M3.1 Flash Fix Proposals$/m);
   assert.match(fleetYaml, /kody-autofix-reusable\.yml@31659885f58f08e129b6dc092f3493d7cdb74a11/);

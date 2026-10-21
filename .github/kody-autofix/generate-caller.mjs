@@ -16,6 +16,12 @@ export const DEFAULT_MODEL = 'MiniMax-M3.1-Flash';
 export const DEFAULT_MODEL_BASE_URL = 'https://api.minimax.io/v1';
 export const MODEL_BASE_URLS = Object.freeze([DEFAULT_MODEL_BASE_URL, 'https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1']);
 export const MODEL_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9-]{0,31}\/)?[A-Za-z0-9][A-Za-z0-9.-]{0,63}$/;
+// Approved model identifiers map to fixed display names; every other value
+// renders as 'Unknown Model' so unparsed model text is never persisted in
+// the generated workflow name (Kody rule: reduce untrusted strings to a
+// fixed enum before use).
+const MODEL_DISPLAY_NAMES = Object.freeze({ 'MiniMax-M3.1-Flash': 'MiniMax M3.1 Flash' });
+const modelDisplayName = (model) => MODEL_DISPLAY_NAMES[model] ?? 'Unknown Model';
 
 // Single-quoted YAML scalars also safely preserve JSON's quotes and backslashes.
 export const yamlString = (value) => `'${String(value).replaceAll("'", "''")}'`;
@@ -94,8 +100,9 @@ export function generateCaller(options) {
   const config = validateOptions(options);
   // Derive the display name from the selected model so a future model
   // change cannot leave the Actions UI billing one model under another's
-  // name (Kody on Personal-Site #225).
-  return `name: Kody ${config.model.replaceAll('-', ' ')} Fix Proposals
+  // name (Kody on Personal-Site #225).  Unapproved model text never reaches
+  // the name (Kody on congress-trading-shared #393).
+  return `name: Kody ${modelDisplayName(config.model)} Fix Proposals
 
 # Generated offline.  Missing SWU_KODY_AUTOFIX_ENABLED means disabled.
 # MODEL_API_KEY is forwarded explicitly; secrets are never inherited.
