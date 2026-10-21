@@ -70,10 +70,31 @@ test('the local caller forwards only secrets the vendored reusable declares', ()
   assert.match(declared, /META_MODEL_API_TOKEN:\n {8}required: false/);
   assert.match(passed, /META_MODEL_API_TOKEN: \$\{\{ secrets\.META_MODEL_API_TOKEN \}\}/);
   // The switch itself:  the endpoint and the model id come from the org
-  // variables, and the credential keeps both branches.  The expressions are
-  // not pinned literally, so an endpoint preset can replace the free-form URL.
-  assert.match(model, /ANTHROPIC_BASE_URL: .*vars\.SWU_AUTOFIX_MODEL/);
-  assert.match(model, /ANTHROPIC_AUTH_TOKEN: .*secrets\.META_MODEL_API_TOKEN.*secrets\.MINIMAX_API_KEY/);
+  // variables, and the credential keeps both branches.  The model id stays
+  // loose here, because the endpoint/model pairing is still being settled.
   assert.match(model, /ANTHROPIC_MODEL: .*vars\.SWU_AUTOFIX_MODEL.*inputs\.model/);
   assert.match(model, /ANTHROPIC_SMALL_FAST_MODEL: .*vars\.SWU_AUTOFIX_MODEL.*inputs\.model/);
+  // The endpoint and the credential are a closed pair:  the only hosts the
+  // switch can name are the two presets,  and the credential follows the host
+  // instead of falling back to the MiniMax key.  A free-form URL or a
+  // contains() host test would let a repository-level variable point the run
+  // at an arbitrary host and hand it an org secret,  so the preset is pinned.
+  const baseUrl = model.match(/^ *ANTHROPIC_BASE_URL:.*$/m)?.[0] ?? '';
+  const authToken = model.match(/^ *ANTHROPIC_AUTH_TOKEN:.*$/m)?.[0] ?? '';
+  const metaHost = "vars.SWU_AUTOFIX_MODEL_BASE_URL == 'https://api.meta.ai'";
+  assert.ok(baseUrl.includes(metaHost), 'the endpoint must be a closed preset, never a free-form URL');
+  assert.ok(authToken.includes(metaHost), 'the credential must follow the same host preset as the endpoint');
+  assert.deepEqual(
+    [...new Set([...baseUrl.matchAll(/https?:\/\/[^\s'"}]+/g)].map(match => match[0]))],
+    ['https://api.meta.ai', 'https://api.minimax.io/anthropic'],
+    'the endpoint may name only the two preset hosts',
+  );
+  // Fail closed:  a Meta run without META_MODEL_API_TOKEN must not reach the
+  // Meta host carrying the MiniMax credential.
+  const metaBranch = authToken.slice(authToken.indexOf(metaHost) + metaHost.length);
+  const minimaxFallback = metaBranch.indexOf('|| secrets.MINIMAX_API_KEY');
+  assert.ok(minimaxFallback > -1, 'the MiniMax credential must stay on the MiniMax branch');
+  const metaCredential = metaBranch.slice(0, minimaxFallback);
+  assert.ok(metaCredential.includes('secrets.META_MODEL_API_TOKEN'));
+  assert.match(metaCredential, /secrets\.META_MODEL_API_TOKEN \|\| 'MISSING-[A-Z-]+'/, 'a Meta run without the Meta credential must fail closed');
 });
