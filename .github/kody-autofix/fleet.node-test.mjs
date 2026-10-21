@@ -20,7 +20,7 @@ const { validateInput, validatePull, sourcePath, selectFindings, collectThreads,
   snapshot, budgetPolicy, reserve, validateReservation, validateScan, scanDirectory, applyEdits, generate, publish,
   providerFrom, chatRequest, requestEdits, usageSidecar, SYSTEM_PROMPT, MODEL_BASE_URLS, schema,
   startProxy, claudeArguments, fixBranch, attemptRef, KODY, LIMITS, MODEL, BUDGET_CLI_MODEL,
-  BUDGET_PROXY_LIMITS } = fleet;
+  BUDGET_PROXY_LIMITS, MINIMAX_OUTPUT_TOKENS } = fleet;
 const head = 'a'.repeat(40);
 const treeSha = 'b'.repeat(40);
 const blobSha = 'e'.repeat(40);
@@ -455,8 +455,8 @@ test('provider configuration accepts only reviewed endpoints and strict model id
   assert.deepEqual(providerFrom({}), { url: 'https://api.minimax.io/v1/chat/completions', model: MODEL });
   assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://api.meta.ai/v1', KODY_MODEL: 'muse-spark-1.3-contributor' }),
     { url: 'https://api.meta.ai/v1/chat/completions', model: 'muse-spark-1.3-contributor' });
-  assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://api.minimax.io/v1', KODY_MODEL: 'MiniMax-M3' }),
-    { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3' });
+  assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://api.minimax.io/v1', KODY_MODEL: 'MiniMax-M3.1-Flash' }),
+    { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3.1-Flash' });
   assert.deepEqual(providerFrom({ KODY_MODEL_BASE_URL: 'https://ai-gateway.vercel.sh/v1', KODY_MODEL: 'minimax/minimax-m3' }),
     { url: 'https://ai-gateway.vercel.sh/v1/chat/completions', model: 'minimax/minimax-m3' });
   assert.deepEqual([...MODEL_BASE_URLS], ['https://api.minimax.io/v1', 'https://ai-gateway.vercel.sh/v1', 'https://api.meta.ai/v1']);
@@ -469,7 +469,7 @@ test('provider configuration accepts only reviewed endpoints and strict model id
 test('chat request is tool-free, bounded, schema-shaped, and carries only approved source', () => {
   const data = packageData(); const body = chatRequest(MODEL, data);
   assert.deepEqual(Object.keys(body).sort(), ['max_tokens', 'messages', 'model', 'reasoning_split', 'stream']);
-  assert.equal(body.max_tokens, LIMITS.outputTokens); assert.equal(body.stream, false);
+  assert.equal(body.max_tokens, MINIMAX_OUTPUT_TOKENS); assert.equal(body.stream, false);
   assert.equal(body.reasoning_split, true);
   assert.equal(body.thinking, undefined);
   assert.equal(body.tools, undefined); assert.equal(body.tool_choice, undefined);
@@ -484,7 +484,18 @@ test('chat request is tool-free, bounded, schema-shaped, and carries only approv
   assert.equal(gatewayRequest.messages[0].content, SYSTEM_PROMPT);
   assert.equal(gatewayRequest.thinking, undefined);
   assert.equal(gatewayRequest.reasoning_split, undefined);
+  assert.equal(gatewayRequest.max_tokens, LIMITS.outputTokens);
   assert.deepEqual(gatewayRequest.response_format.json_schema.schema, schema);
+});
+test('the largest output budget fits the response byte bound', () => {
+  // A token budget the byte bound cannot hold would fail closed after the provider billed.
+  assert.ok(LIMITS.outputBytes >= MINIMAX_OUTPUT_TOKENS * 4);
+  assert.equal(LIMITS.outputTokens, 16_384);
+  assert.equal(MINIMAX_OUTPUT_TOKENS, 32_768);
+  // The provider window must fit inside the generate job's eight-minute timeout, alongside
+  // checkout, npm ci, the gitleaks install and both scans; a longer window lets the job's
+  // own timeout cancel the run before the answer and usage artifacts upload.
+  assert.ok(LIMITS.modelMs <= 240_000);
 });
 test('scan receipt pins tool version, exact snapshot/answer, and fifteen-minute freshness', () => {
   const data = packageData(), edits = answer(), now = Date.now();
@@ -612,18 +623,24 @@ test('provider request is one bounded call with the key only in its authorizatio
   assert.equal(JSON.parse(options.body).max_tokens, LIMITS.outputTokens);
   assert.equal(JSON.parse(options.body).reasoning_split, undefined);
 });
-test('native MiniMax M3 disables thinking and validates base_resp before parsing edits', async () => {
-  const minimax = { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3' };
+test('native MiniMax-M3.1-Flash splits reasoning and validates base_resp before parsing edits', async () => {
+  // M3.1 Flash answers HTTP 400 to thinking: {type: "disabled"} (the retired M3 needed it).
+  const minimax = { url: 'https://api.minimax.io/v1/chat/completions', model: 'MiniMax-M3.1-Flash' };
   const request = chatRequest(minimax.model, packageData(), 'https://api.minimax.io/v1');
-  assert.deepEqual(request.thinking, { type: 'disabled' });
-  assert.equal(request.reasoning_split, undefined);
+  assert.equal(request.reasoning_split, true);
+  assert.equal(request.thinking, undefined);
+  assert.equal(request.max_tokens, MINIMAX_OUTPUT_TOKENS);
   assert.equal(request.messages[0].content, SYSTEM_PROMPT);
   assert(request.messages[0].content.includes(JSON.stringify(schema)));
   assert.equal(request.response_format, undefined);
-  // The fleet default is M3.1 Flash, which takes reasoning_split instead of a disabled thinking block.
-  const otherNativeModel = chatRequest('MiniMax-M3.1-Flash', packageData(), 'https://api.minimax.io/v1');
+  const otherNativeModel = chatRequest('MiniMax-M2.7-highspeed', packageData(), 'https://api.minimax.io/v1');
   assert.equal(otherNativeModel.reasoning_split, true);
   assert.equal(otherNativeModel.thinking, undefined);
+  // Only the reviewed M3.1 identifiers are known to accept the larger budget.
+  assert.equal(otherNativeModel.max_tokens, LIMITS.outputTokens);
+  // An identifier outside the reviewed allowlist keeps the shared budget, however it is spelled.
+  const lookalikeModel = chatRequest('MiniMax-M3.1-custom', packageData(), 'https://api.minimax.io/v1');
+  assert.equal(lookalikeModel.max_tokens, LIMITS.outputTokens);
   const gatewayMiniMax = chatRequest('minimax/minimax-m3', packageData(), 'https://ai-gateway.vercel.sh/v1');
   assert.equal(gatewayMiniMax.reasoning_split, undefined);
   assert.equal(gatewayMiniMax.thinking, undefined);

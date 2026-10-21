@@ -40,7 +40,7 @@ test('offline caller defaults to no paid attempts and no implicit enablement', (
   // The only other forwarded secret is the optional Usage Monitor ingest token (UM-1593).
   assert.equal((caller.match(/secrets\./g) ?? []).length, 2);
   assert(!caller.includes('secrets: inherit'));
-  assert.match(caller, /^name: Kody MiniMax M3 Fix Proposals$/m);
+  assert.match(caller, /^name: Kody MiniMax M3\.1 Flash Fix Proposals$/m);
   assert.match(caller, /model: 'MiniMax-M3\.1-Flash'\n/);
   assert.match(caller, /model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
   assert(!caller.includes('workflow_dispatch'));
@@ -298,15 +298,24 @@ test('provider model and endpoint options are validated and match the helper all
     assert.throws(() => validateOptions(valid({ 'model-base-url': url })), /--model is required/);
   for (const model of ['', '../x', 'a/b/c', "x'y", '${{ secrets.KEY }}', 'x\nsecrets: inherit'])
     assert.throws(() => validateOptions(valid({ model })), /Model/);
-  assert.equal(validateOptions(valid({ model: 'MiniMax-M3' })).model, 'MiniMax-M3');
-  assert.match(generateCaller(valid({ model: 'MiniMax-M3', 'model-base-url': 'https://api.minimax.io/v1' })),
-    /model: 'MiniMax-M3'\n      model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
+  assert.equal(validateOptions(valid({ model: 'MiniMax-M3.1-Flash' })).model, 'MiniMax-M3.1-Flash');
+  assert.match(generateCaller(valid({ model: 'MiniMax-M3.1-Flash', 'model-base-url': 'https://api.minimax.io/v1' })),
+    /model: 'MiniMax-M3.1-Flash'\n      model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
   for (const url of ['', 'https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/'])
     assert.throws(() => validateOptions(valid({ 'model-base-url': url })), /base URL/);
 });
 
-test('fleet caller pins the published MiniMax workflow without changing its display name', () => {
-  assert.match(fleetYaml, /^name: Kody MiniMax M3 Fix Proposals$/m);
+test('caller name falls back to Unknown Model for unapproved model text', () => {
+  assert.match(generateCaller(valid({ model: 'Custom-9x' })), /^name: Kody Unknown Model Fix Proposals$/m);
+});
+
+test('caller name falls back to Unknown Model for inherited object property names', () => {
+  for (const model of ['toString', 'constructor', 'hasOwnProperty', 'valueOf'])
+    assert.match(generateCaller(valid({ model })), /^name: Kody Unknown Model Fix Proposals$/m);
+});
+
+test('fleet caller pins the published MiniMax workflow with the M3.1 Flash display name', () => {
+  assert.match(fleetYaml, /^name: Kody MiniMax M3.1 Flash Fix Proposals$/m);
   assert.match(fleetYaml, /kody-autofix-reusable\.yml@31659885f58f08e129b6dc092f3493d7cdb74a11/);
   assert.match(fleetYaml, /model: 'MiniMax-M3\.1-Flash'\n/);
   assert.match(fleetYaml, /model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
