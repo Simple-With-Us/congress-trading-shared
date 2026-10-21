@@ -109,9 +109,14 @@ test('the local caller forwards only secrets the vendored reusable declares', as
   const guard = workflow.match(/- name: Validate Model Switch[\s\S]*?(?=\n      - name:)/)?.[0] ?? '';
   assert.ok(guard, 'the reusable must validate the model switch before running the action');
   assert.ok(guard.indexOf('Run Claude Autofix') === -1, 'guard slice must stop before the action step');
-  assert.match(guard, /if \[ -z "\$VAR_BASE" \]; then exit 0; fi/, 'an unset base must stay on MiniMax');
-  assert.match(guard, /"\$VAR_BASE" = "https:\/\/api\.meta\.ai" \] && \[ -n "\$VAR_MODEL" \] && \[ -n "\$META_TOKEN"/, 'the Meta host must require an explicit Meta model id and a provisioned Meta token');
+  assert.match(guard, /"" \| https:\/\/api\.minimax\.io\/anthropic\) route=minimax ;;/, 'an unset base or the canonical MiniMax host must stay on MiniMax');
+  assert.match(guard, /\[ "\$route" = "meta" \] && \[ -n "\$VAR_MODEL" \] && \[ -n "\$META_TOKEN" \] && \[ "\$model_minimax" = "no" \]/, 'the Meta host must require an explicit non-MiniMax model id and a provisioned Meta token');
+  assert.match(guard, /\[Mm\]\[Ii\]\[Nn\]\[Ii\]\[Mm\]\[Aa\]\[Xx\]\*\) model_minimax=yes ;;/, 'a MiniMax model id must be detected case-insensitively');
+  assert.match(guard, /names a non-MiniMax model id while SWU_AUTOFIX_MODEL_BASE_URL selects the MiniMax host/, 'the MiniMax route must reject a non-MiniMax model id');
   assert.match(guard, /META_MODEL_API_TOKEN provisioned/, 'the failure message must name META_MODEL_API_TOKEN');
+  // Caller-controlled values must never reach the workflow command:  only
+  // set/unset flags are echoed (Kody 2026-10-21).
+  assert.doesNotMatch(guard, /::error::[^"]*'\$VAR_(BASE|MODEL)'/, 'the failure must not echo raw caller-controlled values');
   assert.match(guard, /exit 1/, 'any other base/model combination must fail fast');
   // The endpoint and the credential are a closed pair:  the only hosts the
   // switch can name are the two presets,  and the credential follows the host
