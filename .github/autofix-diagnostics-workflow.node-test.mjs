@@ -63,11 +63,13 @@ test('the local caller forwards only secrets the vendored reusable declares', as
   // the caller alone would otherwise ship an invalid secret mapping with CI
   // green and the autofix loop disabled.
   const validation = readFileSync(new URL('./workflows/autofix-diagnostics-validation.yml', import.meta.url), 'utf8');
-  assert.equal(
-    (validation.match(/^ {6}- '\.github\/workflows\/claude-code-autofix\.yml'$/gm) ?? []).length,
-    2,
-    'the diagnostics validation workflow must watch the caller in both its pull_request and push path lists',
-  );
+  for (const watched of ['.github/workflows/claude-code-autofix.yml', '.github/workflows/autofix.yml']) {
+    assert.equal(
+      (validation.match(new RegExp(`^ {6}- '${watched.replace(/[./]/g, '\\$&')}'$`, 'gm')) ?? []).length,
+      2,
+      `the diagnostics validation workflow must watch ${watched} in both its pull_request and push path lists`,
+    );
+  }
   const declared = workflow.slice(workflow.indexOf('    secrets:'), workflow.indexOf('\npermissions:'));
   const passed = caller.slice(caller.indexOf('    secrets:'), caller.indexOf('\n    with:'));
   const declaredNames = new Set([...declared.matchAll(/^ {6}([A-Z][A-Z0-9_]*):$/gm)].map(match => match[1]));
