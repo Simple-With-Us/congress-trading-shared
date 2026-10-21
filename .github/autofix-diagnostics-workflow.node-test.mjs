@@ -52,3 +52,24 @@ test('usage metering happens in a separate job so the ingest credential never si
   assert.match(meter, /harness: claude-code-ci/);
   assert.match(workflow, /USAGE_INGEST_TOKEN:\n        required: false/);
 });
+
+// A caller that forwards a secret the callee does not declare fails static
+// validation ("Invalid secret, X is not defined"), which disables the whole
+// autofix loop, so the contract is asserted here.
+test('the local caller forwards only secrets the vendored reusable declares', () => {
+  const caller = readFileSync(new URL('./workflows/claude-code-autofix.yml', import.meta.url), 'utf8');
+  const declared = workflow.slice(workflow.indexOf('    secrets:'), workflow.indexOf('\npermissions:'));
+  const passed = caller.slice(caller.indexOf('    secrets:'), caller.indexOf('\n    with:'));
+  const declaredNames = new Set([...declared.matchAll(/^ {6}([A-Z][A-Z0-9_]*):$/gm)].map(match => match[1]));
+  const passedNames = [...passed.matchAll(/^ {6}([A-Z][A-Z0-9_]*): \$\{\{ secrets\./gm)].map(match => match[1]);
+  assert.ok(passedNames.length > 0);
+  for (const name of passedNames) {
+    assert.ok(declaredNames.has(name), `the caller passes ${name}, which the reusable does not declare`);
+  }
+  // The org model switch needs the Meta token declared and forwarded.
+  assert.match(declared, /META_MODEL_API_TOKEN:\n {8}required: false/);
+  assert.match(passed, /META_MODEL_API_TOKEN: \$\{\{ secrets\.META_MODEL_API_TOKEN \}\}/);
+  assert.match(model, /ANTHROPIC_BASE_URL: \$\{\{ vars\.SWU_AUTOFIX_MODEL_BASE_URL/);
+  assert.match(model, /ANTHROPIC_AUTH_TOKEN: .*secrets\.META_MODEL_API_TOKEN.*secrets\.MINIMAX_API_KEY/);
+  assert.match(model, /ANTHROPIC_MODEL: \$\{\{ vars\.SWU_AUTOFIX_MODEL \|\| inputs\.model \}\}/);
+});
