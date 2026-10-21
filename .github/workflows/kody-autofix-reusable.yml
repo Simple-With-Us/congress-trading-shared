@@ -87,7 +87,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Simple-With-Us/congress-trading-shared
-          ref: 'd06ac2d47bc3b9182ea43deee9f0a91ffdf33ab0'
+          ref: 'cb956e7a81f657b50acc71de9956548addd9ad6b'
           path: trusted-helper
           persist-credentials: false
           sparse-checkout: .github/kody-autofix
@@ -135,7 +135,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Simple-With-Us/congress-trading-shared
-          ref: 'd06ac2d47bc3b9182ea43deee9f0a91ffdf33ab0'
+          ref: 'cb956e7a81f657b50acc71de9956548addd9ad6b'
           path: trusted-helper
           persist-credentials: false
           sparse-checkout: .github/kody-autofix
@@ -181,7 +181,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Simple-With-Us/congress-trading-shared
-          ref: 'd06ac2d47bc3b9182ea43deee9f0a91ffdf33ab0'
+          ref: 'cb956e7a81f657b50acc71de9956548addd9ad6b'
           path: trusted-helper
           persist-credentials: false
           sparse-checkout: .github/kody-autofix
@@ -263,7 +263,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Simple-With-Us/congress-trading-shared
-          ref: 'd06ac2d47bc3b9182ea43deee9f0a91ffdf33ab0'
+          ref: 'cb956e7a81f657b50acc71de9956548addd9ad6b'
           path: trusted-helper
           persist-credentials: false
           sparse-checkout: .github/kody-autofix
