@@ -92,7 +92,7 @@ export function validateOptions(options) {
 
 export function generateCaller(options) {
   const config = validateOptions(options);
-  return `name: Kody MiniMax M3 Fix Proposals
+  return `name: Kody MiniMax M3.1 Flash Fix Proposals
 
 # Generated offline.  Missing SWU_KODY_AUTOFIX_ENABLED means disabled.
 # MODEL_API_KEY is forwarded explicitly; secrets are never inherited.

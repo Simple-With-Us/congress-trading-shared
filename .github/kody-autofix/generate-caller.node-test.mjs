@@ -40,7 +40,7 @@ test('offline caller defaults to no paid attempts and no implicit enablement', (
   // The only other forwarded secret is the optional Usage Monitor ingest token (UM-1593).
   assert.equal((caller.match(/secrets\./g) ?? []).length, 2);
   assert(!caller.includes('secrets: inherit'));
-  assert.match(caller, /^name: Kody MiniMax M3 Fix Proposals$/m);
+  assert.match(caller, /^name: Kody MiniMax M3.1 Flash Fix Proposals$/m);
   assert.match(caller, /model: 'MiniMax-M3.1-Flash'\n/);
   assert.match(caller, /model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
   assert(!caller.includes('workflow_dispatch'));
