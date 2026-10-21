@@ -492,6 +492,10 @@ test('the largest output budget fits the response byte bound', () => {
   assert.ok(LIMITS.outputBytes >= MINIMAX_OUTPUT_TOKENS * 4);
   assert.equal(LIMITS.outputTokens, 16_384);
   assert.equal(MINIMAX_OUTPUT_TOKENS, 32_768);
+  // The provider window must fit inside the generate job's eight-minute timeout, alongside
+  // checkout, npm ci, the gitleaks install and both scans; a longer window lets the job's
+  // own timeout cancel the run before the answer and usage artifacts upload.
+  assert.ok(LIMITS.modelMs <= 240_000);
 });
 test('scan receipt pins tool version, exact snapshot/answer, and fifteen-minute freshness', () => {
   const data = packageData(), edits = answer(), now = Date.now();
@@ -632,8 +636,11 @@ test('native MiniMax-M3.1-Flash splits reasoning and validates base_resp before 
   const otherNativeModel = chatRequest('MiniMax-M2.7-highspeed', packageData(), 'https://api.minimax.io/v1');
   assert.equal(otherNativeModel.reasoning_split, true);
   assert.equal(otherNativeModel.thinking, undefined);
-  // Only the M3.1 family is known to accept the larger budget.
+  // Only the reviewed M3.1 identifiers are known to accept the larger budget.
   assert.equal(otherNativeModel.max_tokens, LIMITS.outputTokens);
+  // An identifier outside the reviewed allowlist keeps the shared budget, however it is spelled.
+  const lookalikeModel = chatRequest('MiniMax-M3.1-custom', packageData(), 'https://api.minimax.io/v1');
+  assert.equal(lookalikeModel.max_tokens, LIMITS.outputTokens);
   const gatewayMiniMax = chatRequest('minimax/minimax-m3', packageData(), 'https://ai-gateway.vercel.sh/v1');
   assert.equal(gatewayMiniMax.reasoning_split, undefined);
   assert.equal(gatewayMiniMax.thinking, undefined);
