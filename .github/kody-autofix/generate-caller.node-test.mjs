@@ -41,7 +41,7 @@ test('offline caller defaults to no paid attempts and no implicit enablement', (
   assert.equal((caller.match(/secrets\./g) ?? []).length, 2);
   assert(!caller.includes('secrets: inherit'));
   assert.match(caller, /^name: Kody MiniMax M3 Fix Proposals$/m);
-  assert.match(caller, /model: 'MiniMax-M3'\n/);
+  assert.match(caller, /model: 'MiniMax-M3.1-Flash'\n/);
   assert.match(caller, /model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
   assert(!caller.includes('workflow_dispatch'));
   assert(!caller.includes('pull_request_review:'));
@@ -284,7 +284,7 @@ test('provider model and endpoint options are validated and match the helper all
   assert.equal(DEFAULT_MODEL_BASE_URL, fleet.DEFAULT_MODEL_BASE_URL);
   assert.deepEqual([...MODEL_BASE_URLS], [...fleet.MODEL_BASE_URLS]);
   assert.equal(String(MODEL_PATTERN), String(fleet.MODEL_PATTERN));
-  assert.match(yaml, /      model:\n[\s\S]*?default: MiniMax-M3\n/);
+  assert.match(yaml, /      model:\n[\s\S]*?default: MiniMax-M3.1-Flash\n/);
   assert.match(yaml, /      model_base_url:\n[\s\S]*?default: https:\/\/api\.minimax\.io\/v1\n/);
   assert.equal([...yaml.matchAll(/ref: 'd06ac2d47bc3b9182ea43deee9f0a91ffdf33ab0'/g)].length, 4);
   const native = generateCaller(valid({ model: 'muse-spark-1.3-contributor', 'model-base-url': 'https://api.meta.ai/v1' }));
@@ -298,17 +298,17 @@ test('provider model and endpoint options are validated and match the helper all
     assert.throws(() => validateOptions(valid({ 'model-base-url': url })), /--model is required/);
   for (const model of ['', '../x', 'a/b/c', "x'y", '${{ secrets.KEY }}', 'x\nsecrets: inherit'])
     assert.throws(() => validateOptions(valid({ model })), /Model/);
-  assert.equal(validateOptions(valid({ model: 'MiniMax-M3' })).model, 'MiniMax-M3');
-  assert.match(generateCaller(valid({ model: 'MiniMax-M3', 'model-base-url': 'https://api.minimax.io/v1' })),
-    /model: 'MiniMax-M3'\n      model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
+  assert.equal(validateOptions(valid({ model: 'MiniMax-M3.1-Flash' })).model, 'MiniMax-M3.1-Flash');
+  assert.match(generateCaller(valid({ model: 'MiniMax-M3.1-Flash', 'model-base-url': 'https://api.minimax.io/v1' })),
+    /model: 'MiniMax-M3.1-Flash'\n      model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
   for (const url of ['', 'https://evil.example/v1', 'http://ai-gateway.vercel.sh/v1', 'https://ai-gateway.vercel.sh/v1/'])
     assert.throws(() => validateOptions(valid({ 'model-base-url': url })), /base URL/);
 });
 
 test('fleet caller pins the published MiniMax workflow without changing its display name', () => {
-  assert.match(fleetYaml, /^name: Kody MiniMax M3 Fix Proposals$/m);
+  assert.match(fleetYaml, /^name: Kody MiniMax M3.1 Flash Fix Proposals$/m);
   assert.match(fleetYaml, /kody-autofix-reusable\.yml@31659885f58f08e129b6dc092f3493d7cdb74a11/);
-  assert.match(fleetYaml, /model: 'MiniMax-M3'\n/);
+  assert.match(fleetYaml, /model: 'MiniMax-M3.1-Flash'\n/);
   assert.match(fleetYaml, /model_base_url: 'https:\/\/api\.minimax\.io\/v1'\n/);
   assert.match(fleetYaml, /MODEL_API_KEY: \$\{\{ secrets\.MINIMAX_API_KEY \}\}/);
   // The Usage Monitor ingest token must be forwarded too, else `meter` silently reports nothing.
