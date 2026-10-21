@@ -38,7 +38,7 @@ jobs:
         # Scoped install (Kody on cts #394):  the test needs only its parser
         # and schema packages,  and a full npm ci could eat the five-minute
         # job budget on unrelated dependency changes.
-        run: npm install --no-save --no-audit --no-fund yaml@2 zod@4
+        run: npm install --no-save --no-audit --no-fund --ignore-scripts yaml@2 zod@4
       - name: Test Sanitization And Failure Wiring
         run: node --test .github/actions/autofix-diagnostics/test/reduce.node-test.mjs .github/autofix-diagnostics-workflow.node-test.mjs
       - name: Simulate A Capped Run Without A Model Call
