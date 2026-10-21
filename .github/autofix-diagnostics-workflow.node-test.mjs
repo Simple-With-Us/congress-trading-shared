@@ -175,6 +175,22 @@ test('the local caller forwards only secrets the vendored reusable declares', as
   const modelEnv = modelStep.env ?? {};
   assert.match(String(modelEnv.ANTHROPIC_MODEL ?? ''), /vars\.SWU_AUTOFIX_MODEL.*inputs\.model/);
   assert.match(String(modelEnv.ANTHROPIC_SMALL_FAST_MODEL ?? ''), /vars\.SWU_AUTOFIX_MODEL.*inputs\.model/);
+  // Request gate allowlist (Kody on cts #394):  a disallowed actor must be
+  // skipped before any marker lookup or write,  and only the normalized
+  // allowlisted requester may reach the marker.  Located through the
+  // validated structure like every other step assertion here.
+  const gateStep = stepsParsed.find(step => step.id === 'request_gate');
+  assert.ok(gateStep, 'the reusable must have a request gate');
+  assert.equal(gateStep.env?.ALLOWED_BOTS, '${{ inputs.allowed_bots }}');
+  const gateRun = gateStep.run ?? '';
+  assert.match(gateRun, /is not in allowed_bots, skipping before any marker write/, 'a disallowed actor must skip before marker work');
+  assert.match(gateRun, /tr 'A-Z' 'a-z'.*\\\[bot\\\]\$/, 'the allowlist is normalized as the action normalizes');
+  const allowIdx = gateRun.indexOf('allowed_bots, skipping');
+  const lookupIdx = gateRun.indexOf('prior_markers.txt');
+  assert.ok(allowIdx > -1 && lookupIdx > -1 && allowIdx < lookupIdx, 'the allowlist check must precede the marker lookup');
+  // The marker is keyed only by the normalized requester.
+  assert.match(gateRun, /marker="swu-autofix-run: bot=\$requester"/, 'the marker persists only the normalized requester');
+
   // Pair guard:  the switch is validated as one pair before the action runs,
   // so an endpoint override without SWU_AUTOFIX_MODEL fails the run instead of
   // pairing the Meta host with the default MiniMax model id.  Located through
