@@ -92,7 +92,10 @@ export function validateOptions(options) {
 
 export function generateCaller(options) {
   const config = validateOptions(options);
-  return `name: Kody MiniMax M3.1 Flash Fix Proposals
+  // Derive the display name from the selected model so a future model
+  // change cannot leave the Actions UI billing one model under another's
+  // name (Kody on Personal-Site #225).
+  return `name: Kody ${config.model.replaceAll('-', ' ')} Fix Proposals
 
 # Generated offline.  Missing SWU_KODY_AUTOFIX_ENABLED means disabled.
 # MODEL_API_KEY is forwarded explicitly; secrets are never inherited.
