@@ -157,6 +157,12 @@ test('stream accounting requires start, terminal cumulative output, and message_
   ];
   const buffer = list => Buffer.from(list.map(e => `data: ${JSON.stringify(e)}\n\n`).join(''));
   assert.deepEqual(completeUsage('minimax', buffer(events), 'text/event-stream'), { inputTokens: 12, cachedInputTokens: 7, outputTokens: 11 });
+  // The provider may echo the retired -Preview spelling for the same served model; accept it.
+  const previewEcho = [{ ...events[0], message: { ...events[0].message, model: 'MiniMax-M3.1-Flash-Preview' } }, events[1], events[2]];
+  assert.deepEqual(completeUsage('minimax', buffer(previewEcho), 'text/event-stream'), { inputTokens: 12, cachedInputTokens: 7, outputTokens: 11 });
+  // An unrelated model id still fails closed.
+  const wrongEcho = [{ ...events[0], message: { ...events[0].message, model: 'MiniMax-M2.7' } }, events[1], events[2]];
+  assert.equal(completeUsage('minimax', buffer(wrongEcho), 'text/event-stream'), null);
   assert.equal(completeUsage('minimax', buffer(events.slice(0, -1)), 'text/event-stream'), null);
   assert.equal(completeUsage('minimax', buffer([...events, events[1]]), 'text/event-stream'), null);
   assert.equal(completeUsage('minimax', buffer([events[0], events[1], events[1], events[2]]), 'text/event-stream'), null);
