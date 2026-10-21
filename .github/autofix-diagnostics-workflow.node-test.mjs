@@ -98,10 +98,20 @@ test('the local caller forwards only secrets the vendored reusable declares', as
   assert.match(declared, /META_MODEL_API_TOKEN:\n {8}required: false/);
   assert.match(passed, /META_MODEL_API_TOKEN: \$\{\{ secrets\.META_MODEL_API_TOKEN \}\}/);
   // The switch itself:  the endpoint and the model id come from the org
-  // variables, and the credential keeps both branches.  The model id stays
-  // loose here, because the endpoint/model pairing is still being settled.
+  // variables, and the credential keeps both branches.  The model id reads
+  // loosely here because the Validate Model Switch step below enforces the
+  // endpoint/model pairing before the action runs.
   assert.match(model, /ANTHROPIC_MODEL: .*vars\.SWU_AUTOFIX_MODEL.*inputs\.model/);
   assert.match(model, /ANTHROPIC_SMALL_FAST_MODEL: .*vars\.SWU_AUTOFIX_MODEL.*inputs\.model/);
+  // Pair guard:  the switch is validated as one pair before the action runs,
+  // so an endpoint override without SWU_AUTOFIX_MODEL fails the run instead of
+  // pairing the Meta host with the default MiniMax model id.
+  const guard = workflow.match(/- name: Validate Model Switch[\s\S]*?(?=\n      - name:)/)?.[0] ?? '';
+  assert.ok(guard, 'the reusable must validate the model switch before running the action');
+  assert.ok(guard.indexOf('Run Claude Autofix') === -1, 'guard slice must stop before the action step');
+  assert.match(guard, /if \[ -z "\$VAR_BASE" \]; then exit 0; fi/, 'an unset base must stay on MiniMax');
+  assert.match(guard, /"\$VAR_BASE" = "https:\/\/api\.meta\.ai" \] && \[ -n "\$VAR_MODEL"/, 'the Meta host must require an explicit Meta model id');
+  assert.match(guard, /exit 1/, 'any other base/model combination must fail fast');
   // The endpoint and the credential are a closed pair:  the only hosts the
   // switch can name are the two presets,  and the credential follows the host
   // instead of falling back to the MiniMax key.  A free-form URL or a
@@ -127,6 +137,16 @@ test('the local caller forwards only secrets the vendored reusable declares', as
     metaBranch,
     /^\s*&&\s*\(secrets\.META_MODEL_API_TOKEN \|\| 'MISSING-[A-Z-]+'\)\s*\|\|\s*secrets\.MINIMAX_API_KEY/,
     'the MiniMax credential must be the fallback of the whole expression, not a term inside the Meta branch',
+  );
+  // anthropic_api_key feeds claude-code-action directly (its inline-comment
+  // classifier ignores ANTHROPIC_BASE_URL),  so it must follow the same host
+  // preset as ANTHROPIC_AUTH_TOKEN instead of always sending the MiniMax key.
+  const apiKey = model.match(/^ *anthropic_api_key:.*$/m)?.[0] ?? '';
+  assert.ok(apiKey.includes(metaHost), 'anthropic_api_key must follow the same host preset as the endpoint');
+  assert.match(
+    apiKey.slice(apiKey.indexOf(metaHost) + metaHost.length),
+    /^\s*&&\s*\(secrets\.META_MODEL_API_TOKEN \|\| 'MISSING-[A-Z-]+'\)\s*\|\|\s*secrets\.MINIMAX_API_KEY/,
+    'anthropic_api_key must fall back to the MiniMax key only outside the Meta branch',
   );
   // The other caller of the fleet's reusable workflow is external and pinned by
   // SHA, so its declarations cannot be read from this repo.  The pin and the
