@@ -280,7 +280,7 @@ test('the local caller forwards only secrets the vendored reusable declares', as
   assert.ok(externalPin, 'the external fleet reusable must stay pinned by SHA');
   assert.equal(
     externalPin[1],
-    'c97a2dae96762eb9ffc122c753f0dfb0a7840650',
+    'a4c48f013a2108be517ee933dccb1b37e9403920',
     'the external reusable pin changed:  re-check that it still declares every secret this caller forwards, then update this expectation',
   );
   assert.deepEqual(
