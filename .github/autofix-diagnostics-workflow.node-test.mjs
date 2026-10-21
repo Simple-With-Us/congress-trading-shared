@@ -23,17 +23,39 @@ const StepSchema = z.object({
 const JobSchema = z.object({
   'runs-on': z.union([z.string(), z.array(z.string())]).optional(),
   needs: z.union([z.string(), z.array(z.string())]).optional(),
-  if: z.string().optional(),
+  // Widened past the shapes this test asserts on (Kody on cts #394):  a
+  // valid upstream Actions shape must never make the schema itself throw.
+  if: z.unknown().optional(),
   uses: z.string().optional(),
   secrets: z.record(z.string(), z.string()).optional(),
-  permissions: z.record(z.string(), z.string()).optional(),
+  permissions: z.union([z.record(z.string(), z.string()), z.string()]).optional(),
   outputs: z.record(z.string(), z.string()).optional(),
   steps: z.array(StepSchema).optional(),
 }).passthrough();
+const CallableSecretSchema = z.object({
+  required: z.boolean().optional(),
+}).passthrough();
 const WorkflowSchema = z.object({
   name: z.string(),
+  // The on.workflow_call.secrets contract is validated too (Kody on cts
+  // #394):  the secret-name assertions below must come from parsed YAML,
+  // never from raw text a malformed file could satisfy by accident.
+  on: z.object({
+    workflow_call: z.object({
+      secrets: z.record(z.string(), CallableSecretSchema).optional(),
+    }).passthrough().optional(),
+  }).passthrough().optional(),
   jobs: z.record(z.string(), JobSchema),
 }).passthrough();
+function parseOrAssert(yaml, label) {
+  // A schema violation is a contract failure with the offending shape in the
+  // message, never an unhandled module abort (Kody on cts #394).
+  try {
+    return WorkflowSchema.parse(parseYaml(yaml));
+  } catch (err) {
+    assert.fail(`${label} is not a valid callable workflow shape: ${err.message.slice(0, 400)}`);
+  }
+}
 const WatchSchema = z.object({
   on: z.object({
     pull_request: z.object({ paths: z.array(z.string()) }).passthrough(),
@@ -74,7 +96,6 @@ test('failure artifacts contain only the reducer output and expire after seven d
 });
 
 test('usage metering happens in a separate job so the ingest credential never sits beside the model', () => {
-  const meter = workflow.slice(workflow.indexOf('\n  meter:'));
   const meterJob = parsed.jobs.meter;
   assert(meterJob && Array.isArray(meterJob.steps), 'jobs.meter.steps must be a validated step list');
   const extractStep = stepsParsed.find(step => step.name === 'Extract Usage Counts');
@@ -119,35 +140,34 @@ test('the local caller forwards only secrets the vendored reusable declares', as
     assert.ok(validation.on.pull_request.paths.includes(watched), `pull_request paths must watch ${watched}`);
     assert.ok(validation.on.push.paths.includes(watched), `push paths must watch ${watched}`);
   }
-  const declared = workflow.slice(workflow.indexOf('    secrets:'), workflow.indexOf('\npermissions:'));
-  const passed = caller.slice(caller.indexOf('    secrets:'), caller.indexOf('\n    with:'));
-  const declaredNames = new Set([...declared.matchAll(/^ {6}([A-Z][A-Z0-9_]*):$/gm)].map(match => match[1]));
-  // Both the forwarded name and the secret it maps to are captured, so a
-  // mapping written in another shape is counted as unparsed instead of being
-  // skipped, and a name wired to the wrong secret is caught here.
-  const passedEntries = [...passed.matchAll(/^ {6}([A-Z][A-Z0-9_]*): \$\{\{ secrets\.([A-Z][A-Z0-9_]*) \}\}$/gm)];
-  const passedNames = passedEntries.map(match => match[1]);
+  // The secret contract is derived from the parsed caller and callee, never
+  // from raw text (Kody on cts #394):  malformed or unknown YAML shapes fail
+  // the parse instead of satisfying a regex by accident.  A mapping written
+  // in another shape cannot parse into the expected record, and a name wired
+  // to the wrong secret is caught by the value comparison.
+  const callerParsed = parseOrAssert(caller, 'the local caller');
+  const callerJob = Object.values(callerParsed.jobs).find(job => typeof job.uses === 'string' && job.uses.includes('codex-autofix-reusable.yml'));
+  assert(callerJob, 'the local caller must have a job using the vendored reusable');
+  const passedSecrets = callerJob.secrets ?? {};
+  const declaredSecrets = parsed.on?.workflow_call?.secrets ?? {};
+  const declaredNames = new Set(Object.keys(declaredSecrets));
+  const passedNames = Object.keys(passedSecrets);
   assert.ok(passedNames.length > 0);
-  assert.equal(
-    passedNames.length,
-    (passed.match(/^ {6}[A-Z][A-Z0-9_]*:/gm) ?? []).length,
-    'a forwarded secret mapping was not parsed',
-  );
-  for (const [, name, secret] of passedEntries) {
+  for (const [name, expr] of Object.entries(passedSecrets)) {
     assert.ok(declaredNames.has(name), `the caller passes ${name}, which the reusable does not declare`);
-    assert.equal(name, secret, `${name} is forwarded from secrets.${secret}`);
+    assert.equal(expr, '${{ secrets.' + name + ' }}', `${name} is forwarded from a different secret`);
   }
   // The other direction matters too:  a secret the reusable marks required must
   // be forwarded, because GitHub refuses to run the reusable when a required
   // secret is missing.
-  const requiredNames = [...declared.matchAll(/^ {6}([A-Z][A-Z0-9_]*):\n {8}required: true$/gm)].map(match => match[1]);
+  const requiredNames = Object.entries(declaredSecrets).filter(([, def]) => def.required === true).map(([name]) => name);
   assert.ok(requiredNames.length > 0);
   for (const name of requiredNames) {
     assert.ok(passedNames.includes(name), `the caller must forward ${name}, which the reusable requires`);
   }
   // The org model switch needs the Meta token declared and forwarded.
-  assert.match(declared, /META_MODEL_API_TOKEN:\n {8}required: false/);
-  assert.match(passed, /META_MODEL_API_TOKEN: \$\{\{ secrets\.META_MODEL_API_TOKEN \}\}/);
+  assert.equal(declaredSecrets.META_MODEL_API_TOKEN?.required, false, 'the reusable must declare META_MODEL_API_TOKEN as optional');
+  assert.equal(passedSecrets.META_MODEL_API_TOKEN, '${{ secrets.META_MODEL_API_TOKEN }}');
   // The switch itself:  the endpoint and the model id come from the org
   // variables, and the credential keeps both branches.  The model id reads
   // loosely here because the Validate Model Switch step below enforces the
@@ -155,6 +175,22 @@ test('the local caller forwards only secrets the vendored reusable declares', as
   const modelEnv = modelStep.env ?? {};
   assert.match(String(modelEnv.ANTHROPIC_MODEL ?? ''), /vars\.SWU_AUTOFIX_MODEL.*inputs\.model/);
   assert.match(String(modelEnv.ANTHROPIC_SMALL_FAST_MODEL ?? ''), /vars\.SWU_AUTOFIX_MODEL.*inputs\.model/);
+  // Request gate allowlist (Kody on cts #394):  a disallowed actor must be
+  // skipped before any marker lookup or write,  and only the normalized
+  // allowlisted requester may reach the marker.  Located through the
+  // validated structure like every other step assertion here.
+  const gateStep = stepsParsed.find(step => step.id === 'request_gate');
+  assert.ok(gateStep, 'the reusable must have a request gate');
+  assert.equal(gateStep.env?.ALLOWED_BOTS, '${{ inputs.allowed_bots }}');
+  const gateRun = gateStep.run ?? '';
+  assert.match(gateRun, /is not in allowed_bots, skipping before any marker write/, 'a disallowed actor must skip before marker work');
+  assert.match(gateRun, /tr 'A-Z' 'a-z'.*\\\[bot\\\]\$/, 'the allowlist is normalized as the action normalizes');
+  const allowIdx = gateRun.indexOf('allowed_bots, skipping');
+  const lookupIdx = gateRun.indexOf('prior_markers.txt');
+  assert.ok(allowIdx > -1 && lookupIdx > -1 && allowIdx < lookupIdx, 'the allowlist check must precede the marker lookup');
+  // The marker is keyed only by the normalized requester.
+  assert.match(gateRun, /marker="swu-autofix-run: bot=\$requester"/, 'the marker persists only the normalized requester');
+
   // Pair guard:  the switch is validated as one pair before the action runs,
   // so an endpoint override without SWU_AUTOFIX_MODEL fails the run instead of
   // pairing the Meta host with the default MiniMax model id.  Located through
@@ -269,7 +305,7 @@ test('the local caller forwards only secrets the vendored reusable declares', as
   const externalReusableText = await externalReusable.text();
   // A 200 does not prove the body is the workflow,  so it is parsed and
   // validated before any value is read out of it (Kody on cts #394).
-  const externalParsed = WorkflowSchema.parse(parseYaml(externalReusableText));
+  const externalParsed = parseOrAssert(externalReusableText, 'the pinned external reusable');
   // The live env values come from the step that actually carries them,  found
   // through the validated structure:  the pinned file documents caller
   // snippets inline,  so an unanchored whole-file match could be satisfied by

@@ -143,6 +143,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr }}
           TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           NOTIFY_URL: ${{ vars.SWU_AUTOFIX_NOTIFY_URL }}
+          ALLOWED_BOTS: ${{ inputs.allowed_bots }}
         run: |
           set -euo pipefail
           # Owner rule 2026-10-20:  one autofix run per bot per PR;  the owner
@@ -174,6 +175,23 @@ jobs:
           fi
           if [ "$requester" = "jaywedgeworth22" ] || [ "$requester" = "sentry" ]; then
             echo "::notice::$author is exempt from the one-run-per-bot rule"
+            exit 0
+          fi
+          # Allowlist before any marker work (Kody on cts #394):  the action
+          # filters disallowed actors downstream,  but without a gate-side check
+          # their request still writes a marker and leaves a misleading
+          # "run started" comment.  Normalized as the action normalizes:
+          # lowercased,  [bot] stripped.  Only the normalized allowlisted
+          # requester reaches the marker below.
+          allowed=false
+          IFS=',' read -ra swu_bots <<< "$ALLOWED_BOTS"
+          for swu_bot in "${swu_bots[@]}"; do
+            swu_bot=$(printf '%s' "$swu_bot" | tr -d '[:space:]' | tr 'A-Z' 'a-z' | sed 's/\[bot\]$//')
+            if [ "$swu_bot" = "$requester" ]; then allowed=true; break; fi
+          done
+          if [ "$allowed" != "true" ]; then
+            echo "::notice::$author is not in allowed_bots, skipping before any marker write"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # Anchored exact marker text, github-actions[bot] comments only: an
