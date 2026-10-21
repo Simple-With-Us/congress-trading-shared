@@ -56,7 +56,7 @@ test('usage metering happens in a separate job so the ingest credential never si
 // A caller that forwards a secret the callee does not declare fails static
 // validation ("Invalid secret, X is not defined"), which disables the whole
 // autofix loop, so the contract is asserted here.
-test('the local caller forwards only secrets the vendored reusable declares', () => {
+test('the local caller forwards only secrets the vendored reusable declares', async () => {
   const caller = readFileSync(new URL('./workflows/claude-code-autofix.yml', import.meta.url), 'utf8');
   // This test only runs when the diagnostics validation workflow watches the
   // files it covers,  so the caller must stay on that watch list:  a change to
@@ -147,4 +147,25 @@ test('the local caller forwards only secrets the vendored reusable declares', ()
     'the secrets forwarded to the external reusable changed:  re-check the external declarations, then update this expectation',
   );
   assert.match(external, /META_MODEL_API_TOKEN: \$\{\{ secrets\.META_MODEL_API_TOKEN \}\}/);
+  // The pinned revision is the file the other caller actually runs,  and it now
+  // receives the organization Meta secret,  so it must carry the same closed
+  // endpoint preset and fail-closed credential as the vendored copy:  a
+  // free-form base URL would let a repository-level variable name any host and
+  // receive the org secret as the bearer token.  A pinned revision never
+  // changes,  so the check reads the exact file the caller uses.
+  const externalReusable = await fetch(
+    `https://raw.githubusercontent.com/Simple-With-Us/AI-Fleet-Coordinator/${externalPin[1]}/.github/workflows/pr-autofix-reusable.yml`,
+  );
+  assert.ok(externalReusable.ok, 'the pinned external reusable must be readable');
+  const externalReusableText = await externalReusable.text();
+  assert.match(
+    externalReusableText,
+    /ANTHROPIC_BASE_URL: \$\{\{ vars\.SWU_AUTOFIX_MODEL_BASE_URL == 'https:\/\/api\.meta\.ai' && 'https:\/\/api\.meta\.ai'/,
+    'the external reusable must use the closed endpoint preset, never the free-form variable',
+  );
+  assert.match(
+    externalReusableText,
+    /ANTHROPIC_AUTH_TOKEN: \$\{\{ vars\.SWU_AUTOFIX_MODEL_BASE_URL == 'https:\/\/api\.meta\.ai' && \(secrets\.META_MODEL_API_TOKEN \|\| 'MISSING-[A-Z-]+'\)/,
+    'the external reusable must fail closed when the Meta credential is absent',
+  );
 });
