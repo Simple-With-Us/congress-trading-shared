@@ -292,7 +292,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from `utils.ts`.
 - Consolidated duplicated `APP_B_ORIGIN`/`APP_B_ORIGIN_TAG` constants.
 - **Publish policy:** repo is now public and consumed as a tokenless git
-  dependency (`github:jaywedgeworth22/congress-trading-shared#semver:^1.2.x`).
+  dependency (`github:Simple-With-Us/congress-trading-shared#semver:^1.2.x`).
   The private GitHub Packages registry is retired.
 
 ## [1.1.1] — 2026-07-03
@@ -316,24 +316,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Package prepared for install via `prepare` build script and CI.
 - GitHub Actions CI pipeline (typecheck, build, audit).
 
-[Unreleased]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v2.6.0...HEAD
-[2.6.0]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v2.5.2...v2.6.0
-[2.5.2]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v2.5.1...v2.5.2
-[2.0.0]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v1.11.1...v2.0.0
-[1.11.1]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v1.11.0...v1.11.1
-[1.11.0]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v1.10.0...v1.11.0
-[1.10.0]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v1.9.0...v1.10.0
-[1.8.0]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v1.7.1...v1.8.0
-[1.6.0]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v1.5.0...v1.6.0
-[1.5.0]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v1.4.1...v1.5.0
-[1.4.2]: https://github.com/jaywedgeworth22/congress-trading-shared/commit/030d87e
-[1.4.1]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v1.4.0...v1.4.1
-[1.4.0]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v1.3.0...v1.4.0
-[1.3.3]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v1.3.2...v1.3.3
-[1.3.2]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v1.3.1...v1.3.2
-[1.3.1]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v1.3.0...v1.3.1
-[1.3.0]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/jaywedgeworth22/congress-trading-shared/releases/tag/v1.2.0
-[1.1.1]: https://github.com/jaywedgeworth22/congress-trading-shared/compare/c954921...5b2a6fa
-[1.1.0]: https://github.com/jaywedgeworth22/congress-trading-shared/commit/c954921
-[1.0.0]: https://github.com/jaywedgeworth22/congress-trading-shared/commit/c34cfae
+[Unreleased]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v2.5.2...v2.6.0
+[2.5.2]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v2.5.1...v2.5.2
+[2.0.0]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v1.11.1...v2.0.0
+[1.11.1]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v1.11.0...v1.11.1
+[1.11.0]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v1.10.0...v1.11.0
+[1.10.0]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v1.9.0...v1.10.0
+[1.8.0]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v1.7.1...v1.8.0
+[1.6.0]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v1.5.0...v1.6.0
+[1.5.0]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v1.4.1...v1.5.0
+[1.4.2]: https://github.com/Simple-With-Us/congress-trading-shared/commit/030d87e
+[1.4.1]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v1.4.0...v1.4.1
+[1.4.0]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v1.3.0...v1.4.0
+[1.3.3]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v1.3.2...v1.3.3
+[1.3.2]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v1.3.1...v1.3.2
+[1.3.1]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v1.3.0...v1.3.1
+[1.3.0]: https://github.com/Simple-With-Us/congress-trading-shared/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/Simple-With-Us/congress-trading-shared/releases/tag/v1.2.0
+[1.1.1]: https://github.com/Simple-With-Us/congress-trading-shared/compare/c954921...5b2a6fa
+[1.1.0]: https://github.com/Simple-With-Us/congress-trading-shared/commit/c954921
+[1.0.0]: https://github.com/Simple-With-Us/congress-trading-shared/commit/c34cfae
