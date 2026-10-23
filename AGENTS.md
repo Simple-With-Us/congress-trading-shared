@@ -72,7 +72,7 @@ sentence." — not limited to product/UI copy.  HTML must preserve the gap (NBSP
 - Never write the `&nbsp;` entity.  It shows up as literal text in squash-merge commits, plain-text email and many APIs.
 - Two plain ASCII spaces are not enough.  Rendered surfaces (Zulip, GitHub, Linear, HTML, Markdown chat panes) collapse them to one.
 - Generate the U+00A0 in the shell (`printf 'One.\302\240 Two.'`, or the converter in the `sentence-gap` skill) rather than typing it, because a model-typed U+00A0 can be normalized to a plain space.  Check the bytes before you post.
-- HTML, JSX and SwiftUI product copy: `\u00A0 ` in source, or a shared `SENTENCE_GAP` constant.
+- HTML, JSX and SwiftUI product copy: a real NBSP character (JS/TS `"\u00A0 "`, Swift `"\u{00A0} "`, HTML/raw JSX text a literal NBSP or JSX `{"\u00A0 "}`), or a shared `SENTENCE_GAP` constant.
 - Code, identifiers and machine-readable config never get a U+00A0.  If a surface strips U+00A0, leave the text as it is rather than switching to the entity.
 - This replaces the earlier per-surface rules (the entity in chat panes or on GitHub, and two ASCII spaces in files, commits and terminals).
 
