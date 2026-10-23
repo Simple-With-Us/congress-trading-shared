@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.github/workflows/codex-autofix-reusable.yml` (display name "Claude Code Autofix (Reusable)") now routes claude-code-action to MiniMax (`https://api.minimax.io/anthropic`, org secret `MINIMAX_API_KEY`) instead of DeepSeek, adds a `model` input (default `MiniMax-M3.1-Flash`), and acts on Codex, Kody, Cursor and the `swu-*` fleet bot reviews by default.  Callers must pass `MINIMAX_API_KEY` and use the shared `pr-autofix-${{ github.repository }}-<PR>` concurrency group (see the workflow header).
 - The autofix actor policy now trusts the `swu-*` fleet bots in addition to Codex, Kody and Cursor:  `.github/workflows/codex-autofix-reusable.yml` (default `allowed_bots`), `.github/workflows/claude-code-autofix.yml` (caller `allowed_bots`) and `.github/workflows/autofix.yml` (fleet reusable caller) name the full fleet bot set, and `.github/pr-autofix-trusted.yml` pins the repository trusted policy to model `MiniMax-M3.1-Flash`.  The two local lists carry each bot with and without GitHub's `[bot]` suffix, because claude-code-action strips the suffix before matching;  the `autofix.yml` fleet caller lists each fleet bot with GitHub's `[bot]` suffix, because that reusable compares the author login exactly.  `claude` stays trusted in every list.  Sentry/Seer is not in the reusable default (docs/rollouts/2026-10-19-sentry-claude-autofix.md keeps it unchanged):  the `claude-code-autofix.yml` caller and the `autofix.yml` fleet-reusable caller both pass Sentry/Seer.
 
+## [2.9.0] — 2026-10-23
+
+### Added
+- `SharePayloadSchema` now carries an optional `schemaVersion` (ST-3853).  `SHARE_PAYLOAD_SCHEMA_VERSION` (currently `1`) is the version senders should stamp, and `SHARE_PAYLOAD_LEGACY_SCHEMA_VERSION` is the version assumed when the field is missing.  `resolveSharePayloadSchemaVersion` and `isSupportedSharePayloadSchemaVersion` let a receiver log or reject a version it does not understand.  The field is optional and any positive integer parses, so current senders and receivers keep working unchanged.
+
 ## [2.8.1] — 2026-10-17
 
 ### Fixed
