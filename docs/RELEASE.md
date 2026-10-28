@@ -28,7 +28,7 @@ installed package version must agree.
 
 ## 2. Tag the merged commit
 
-Announce the release in `#agent-sync`, then create an annotated tag on the merged `main` commit.
+Announce the release in `#Work-In-Progress`, then create an annotated tag on the merged `main` commit.
 Never move or reuse an existing release tag.
 
 ```bash
@@ -66,7 +66,7 @@ not prevent `npm pack` or Git dependency installation.
 
 ## 4. Coordinate consumer adoption
 
-Post the immutable tag and verification receipt to `#agent-sync`. Consumer-owned PRs must update
+Post the immutable tag and verification receipt to `#Work-In-Progress`. Consumer-owned PRs must update
 both the exact dependency and its lockfile entry, then pass their own gates:
 
 - Congress.Trade: `app/package.json` and `app/package-lock.json`.
