@@ -39,7 +39,7 @@
     "zod": "^4.6.2"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.0.0",
     "@vitest/coverage-v8": "^5.0.2",
     "publint": "^0.3.25",
     "tsup": "^9.0.0",
