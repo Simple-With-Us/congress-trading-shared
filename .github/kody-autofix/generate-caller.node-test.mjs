@@ -270,7 +270,15 @@ test('dedicated hosted validation runs only read-only offline tests on narrow pa
   assert(!validation.includes('pull_request_target'));
   assert.match(validation, /pull_request:\n    paths:/);
   assert.match(validation, /push:\n    paths:/);
-  assert.match(validation, /node-version: 24/);
+  // Pin a whole Node major and keep it in lockstep with every setup-node in the reusable workflow,
+  // so a Renovate bump has to move all hosted helpers together instead of editing a literal here.
+  const validationNode = [...validation.matchAll(/node-version: (\S+)\n/g)].map(m => m[1]);
+  const reusableNode = [...yaml.matchAll(/node-version: (\S+)\n/g)].map(m => m[1]);
+  assert.equal(validationNode.length, 1);
+  assert.match(validationNode[0], /^\d+$/);
+  assert(Number(validationNode[0]) >= 24);
+  assert(reusableNode.length > 0);
+  for (const version of reusableNode) assert.equal(version, validationNode[0]);
   assert.match(validation, /persist-credentials: false/);
   assert.match(validation, /run: node --test \.github\/kody-autofix\/\*\.node-test\.mjs/);
   assert(!validation.includes('claude-cli-fixture'));
