@@ -33,7 +33,7 @@ jobs:
       pull-requests: write
       checks: read
       actions: read
-    uses: Simple-With-Us/congress-trading-shared/.github/workflows/kody-autofix-reusable.yml@917a49dfb77e4fce307a985510ab814a6f684ef6
+    uses: Simple-With-Us/congress-trading-shared/.github/workflows/kody-autofix-reusable.yml@76ebb5aab4279ed2b17874b586b88ef616c58735
     with:
       repository_id: '1284078548'
       profile: 'web'
