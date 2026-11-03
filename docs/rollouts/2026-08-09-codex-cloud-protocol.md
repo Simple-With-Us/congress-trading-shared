@@ -16,7 +16,7 @@ Optional coordination variables:
 - `SLACK_CHANNEL_ID=C0BEZDJDNKV`
 - `SLACK_PROJECT=Congress-Trading-Shared`
 - `SLACK_AGENT_NAME=Codex`
-- `AGENT_SYNC_TOKEN`
+- `FLEET_SYNC_TOKEN` — the canonical name for the shared coordination token (the live pair in Infisical SHARED-AT-CT prod). `AGENT_SYNC_TOKEN` is read as a fallback for one transition; the Infisical rename is sequenced centrally after all consumer code lands.
 
 Secret-category variables are available only during setup and are removed before the agent phase. Setup scripts therefore validate presence but do not persist secrets into dotfiles.
 

@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Codex Cloud coordination helper.
 # Runtime variables (not setup-only secrets): SLACK_BOT_TOKEN, GH_TOKEN
-# Optional: SLACK_CHANNEL_ID, SLACK_PROJECT, SLACK_AGENT_NAME, AGENT_SYNC_TOKEN
+# Optional: SLACK_CHANNEL_ID, SLACK_PROJECT, SLACK_AGENT_NAME, FLEET_SYNC_TOKEN (AGENT_SYNC_TOKEN read as fallback during the transition)
 set -u
 
 CHANNEL_ID="${SLACK_CHANNEL_ID:-C0BEZDJDNKV}"
 PROJECT="${SLACK_PROJECT:-${SLACK_TOPIC:-Congress-Trading-Shared}}"
 AGENT="${SLACK_AGENT_NAME:-${AGENT_NAME:-CODEX}}"
+# FLEET_SYNC_TOKEN is the canonical name for the shared coordination token;
+# AGENT_SYNC_TOKEN is read as a fallback for one transition, until the central
+# Infisical rename lands (SHARED-AT-CT prod; sequenced after consumer code).
+SYNC_TOKEN="${FLEET_SYNC_TOKEN:-${AGENT_SYNC_TOKEN:-}}"
 AUTH_CONFIG=""
 
 cleanup() {
