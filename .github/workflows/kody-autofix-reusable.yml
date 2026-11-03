@@ -87,15 +87,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Simple-With-Us/congress-trading-shared
-          ref: 'cb956e7a81f657b50acc71de9956548addd9ad6b'
+          ref: '4e1e50a636dde70e8d4c70805da3ef43fe06f565'
           path: trusted-helper
           persist-credentials: false
-          sparse-checkout: .github/kody-autofix
+          sparse-checkout: tools/kody-autofix
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
       - name: Install Trusted Helper Dependencies
-        working-directory: trusted-helper/.github/kody-autofix
+        working-directory: trusted-helper/tools/kody-autofix
         run: npm ci
       - name: Record UTC Reservation Day
         id: clock
@@ -103,7 +103,7 @@ jobs:
         run: printf 'utc_day=%s\n' "$(date -u +%F)" >> "$GITHUB_OUTPUT"
       - name: Validate Check And Snapshot Eligible Findings
         id: prepare
-        run: node trusted-helper/.github/kody-autofix/fleet.mjs prepare "$RUNNER_TEMP/kody-autofix"
+        run: node trusted-helper/tools/kody-autofix/fleet.mjs prepare "$RUNNER_TEMP/kody-autofix"
         env:
           GH_TOKEN: ${{ github.token }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -135,15 +135,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Simple-With-Us/congress-trading-shared
-          ref: 'cb956e7a81f657b50acc71de9956548addd9ad6b'
+          ref: '4e1e50a636dde70e8d4c70805da3ef43fe06f565'
           path: trusted-helper
           persist-credentials: false
-          sparse-checkout: .github/kody-autofix
+          sparse-checkout: tools/kody-autofix
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
       - name: Install Trusted Helper Dependencies
-        working-directory: trusted-helper/.github/kody-autofix
+        working-directory: trusted-helper/tools/kody-autofix
         run: npm ci
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -151,7 +151,7 @@ jobs:
           path: ${{ runner.temp }}/kody-autofix
       - name: Reserve Create-Only Daily Slot And PR Head Attempt
         id: reserve
-        run: node trusted-helper/.github/kody-autofix/fleet.mjs reserve "$RUNNER_TEMP/kody-autofix"
+        run: node trusted-helper/tools/kody-autofix/fleet.mjs reserve "$RUNNER_TEMP/kody-autofix"
         env:
           GH_TOKEN: ${{ github.token }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -181,15 +181,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Simple-With-Us/congress-trading-shared
-          ref: 'cb956e7a81f657b50acc71de9956548addd9ad6b'
+          ref: '4e1e50a636dde70e8d4c70805da3ef43fe06f565'
           path: trusted-helper
           persist-credentials: false
-          sparse-checkout: .github/kody-autofix
+          sparse-checkout: tools/kody-autofix
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
       - name: Install Trusted Helper Dependencies
-        working-directory: trusted-helper/.github/kody-autofix
+        working-directory: trusted-helper/tools/kody-autofix
         run: npm ci
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -214,18 +214,18 @@ jobs:
             --no-same-owner --no-same-permissions gitleaks
           chmod 0755 "$tools_dir/gitleaks"
       - name: Reject Secret-Bearing Context Before Provider Credentials
-        run: node trusted-helper/.github/kody-autofix/fleet.mjs scan "$RUNNER_TEMP/kody-autofix"
+        run: node trusted-helper/tools/kody-autofix/fleet.mjs scan "$RUNNER_TEMP/kody-autofix"
         env:
           GITLEAKS_BIN: ${{ runner.temp }}/kody-tools/gitleaks
       # One bounded chat-completions request from the trusted helper; no CLI, tools, or proxy.
       - name: Generate One Bounded Proposal
-        run: node trusted-helper/.github/kody-autofix/fleet.mjs generate "$RUNNER_TEMP/kody-autofix"
+        run: node trusted-helper/tools/kody-autofix/fleet.mjs generate "$RUNNER_TEMP/kody-autofix"
         env:
           MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
           KODY_MODEL: ${{ inputs.model }}
           KODY_MODEL_BASE_URL: ${{ inputs.model_base_url }}
       - name: Reject Secret-Bearing Generated Results
-        run: node trusted-helper/.github/kody-autofix/fleet.mjs scan-answer "$RUNNER_TEMP/kody-autofix"
+        run: node trusted-helper/tools/kody-autofix/fleet.mjs scan-answer "$RUNNER_TEMP/kody-autofix"
         env:
           GITLEAKS_BIN: ${{ runner.temp }}/kody-tools/gitleaks
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -263,15 +263,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Simple-With-Us/congress-trading-shared
-          ref: 'cb956e7a81f657b50acc71de9956548addd9ad6b'
+          ref: '4e1e50a636dde70e8d4c70805da3ef43fe06f565'
           path: trusted-helper
           persist-credentials: false
-          sparse-checkout: .github/kody-autofix
+          sparse-checkout: tools/kody-autofix
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
       - name: Install Trusted Helper Dependencies
-        working-directory: trusted-helper/.github/kody-autofix
+        working-directory: trusted-helper/tools/kody-autofix
         run: npm ci
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
@@ -286,7 +286,7 @@ jobs:
           name: kody-answer-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/kody-autofix
       - name: Revalidate And Create Draft Proposal
-        run: node trusted-helper/.github/kody-autofix/fleet.mjs publish "$RUNNER_TEMP/kody-autofix"
+        run: node trusted-helper/tools/kody-autofix/fleet.mjs publish "$RUNNER_TEMP/kody-autofix"
         env:
           GH_TOKEN: ${{ github.token }}
 
