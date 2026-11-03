@@ -150,7 +150,7 @@ test('all dependency actions and shared helper checkouts use immutable pinned ve
   for (const name of ['prepare','reserve','generate','publish']) {
     assert.match(job(name), /repository: Simple-With-Us\/congress-trading-shared/);
     assert.match(job(name), /persist-credentials: false/);
-    assert.match(job(name), /sparse-checkout: \.github\/kody-autofix/);
+    assert.match(job(name), /sparse-checkout: tools\/kody-autofix/);
     assert(!job(name).includes('ref: ${{ github.sha }}'));
   }
   // The key-bearing job installs nothing global and runs no third-party CLI or install scripts.
@@ -297,7 +297,7 @@ test('provider model and endpoint options are validated and match the helper all
   assert.equal(String(MODEL_PATTERN), String(fleet.MODEL_PATTERN));
   assert.match(yaml, /      model:\n[\s\S]*?default: MiniMax-M3\.1-Flash\n/);
   assert.match(yaml, /      model_base_url:\n[\s\S]*?default: https:\/\/api\.minimax\.io\/v1\n/);
-  assert.equal([...yaml.matchAll(/ref: 'cb956e7a81f657b50acc71de9956548addd9ad6b'/g)].length, 4);
+  assert.equal([...yaml.matchAll(/ref: '4e1e50a636dde70e8d4c70805da3ef43fe06f565'/g)].length, 4);
   const native = generateCaller(valid({ model: 'muse-spark-1.3-contributor', 'model-base-url': 'https://api.meta.ai/v1' }));
   assert.match(native, /model: 'muse-spark-1\.3-contributor'\n      model_base_url: 'https:\/\/api\.meta\.ai\/v1'\n/);
   const oldGateway = generateCaller(valid({ model: 'minimax/minimax-m3', 'model-base-url': 'https://ai-gateway.vercel.sh/v1' }));
