@@ -2,6 +2,8 @@
 
 This is separate infrastructure from the existing Codex autofix workflow.  It produces a draft proposal for a current, human-authored, same-repository PR after a verified successful Kody check.  It never merges the proposal or updates the source PR branch.  Keep both setup PRs and generated proposals in draft.  The existing shared-repository auto-merge workflow skips drafts and does not arm auto-merge.
 
+The helper is a private development tool under `tools/kody-autofix/`; the reusable workflow remains at `.github/workflows/kody-autofix-reusable.yml`.  Existing immutable workflow revisions retain their original helper paths and remain usable.  Publish and merge this helper layout first, then update the reusable workflow to that exact `main` commit, then update callers only after the workflow commit is on `main`.
+
 ## Disabled setup is the default
 
 The caller generator is offline and writes only YAML to standard output.  It does not read repository inventory, contact GitHub, create an environment, install a credential, or change a variable.
@@ -9,7 +11,7 @@ The caller generator is offline and writes only YAML to standard output.  It doe
 Generate a caller with a reviewed repository ID, source profile, source scopes, and the exact commit containing the shared reusable workflow:
 
 ```sh
-node .github/kody-autofix/generate-caller.mjs \
+node tools/kody-autofix/generate-caller.mjs \
   --repository-id 123456789 \
   --profile web \
   --source-prefixes '["src/","server/"]' \
@@ -54,7 +56,7 @@ Action commit pins are copied from the existing reviewed pilot.  Gitleaks is pin
 Run offline tests with stock Node.js:
 
 ```sh
-node --test .github/kody-autofix/*.node-test.mjs
+node --test tools/kody-autofix/*.node-test.mjs
 ```
 
 The generator tests cover default-off behavior, explicit allocation acknowledgement, profile/file scopes, hostile input rejection, action and helper pinning, event identity filters, privilege separation, scanner order, artifact handling, and distinct concurrency keys.  The caller-level group `pr-autofix-<owner/repo>-<PR number>` without cancellation is shared with the fleet's other PR autofix callers, so only one autofix runs per PR at a time.  They make no GitHub or paid provider calls.  The dedicated `kody-autofix-validation.yml` runs only these offline tests on relevant pull-request and push path changes, using Node 24 and a read-only token.  It never contacts a model provider; provider calls are exercised only through injected fetch mocks.

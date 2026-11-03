@@ -32,6 +32,10 @@ npm audit
 npm run pack:dry
 ```
 
+## Development Tools
+
+The private [Kody autofix helper](tools/kody-autofix/README.md) owns its dependencies and offline tests under `tools/kody-autofix/`.  GitHub Actions orchestration remains under `.github/`; the published library keeps its root package and `src/` layout.
+
 ## Publish Policy
 
 This repo is **public** and the supported consumption path is a **tokenless git

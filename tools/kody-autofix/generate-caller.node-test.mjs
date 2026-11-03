@@ -9,8 +9,8 @@ import * as fleet from './fleet.mjs';
 const valid = (overrides = {}) => ({'repository-id': '123456789', profile: 'web',
   'source-prefixes': '["src/","server/"]', 'shared-sha': 'a'.repeat(40), ...overrides});
 const script = new URL('./generate-caller.mjs', import.meta.url);
-const workflowPath = new URL('../workflows/kody-autofix-reusable.yml', import.meta.url);
-const fleetWorkflowPath = new URL('../workflows/kody-fleet-autofix.yml', import.meta.url);
+const workflowPath = new URL('../../.github/workflows/kody-autofix-reusable.yml', import.meta.url);
+const fleetWorkflowPath = new URL('../../.github/workflows/kody-fleet-autofix.yml', import.meta.url);
 const yaml = await readFile(workflowPath, 'utf8');
 const fleetYaml = await readFile(fleetWorkflowPath, 'utf8');
 const job = (name) => {
@@ -263,13 +263,16 @@ test('caller and callee concurrency cannot deadlock through an identical key', (
 
 
 test('dedicated hosted validation runs only read-only offline tests on narrow paths', async () => {
-  const validation = await readFile(new URL('../workflows/kody-autofix-validation.yml', import.meta.url), 'utf8');
+  const validation = await readFile(new URL('../../.github/workflows/kody-autofix-validation.yml', import.meta.url), 'utf8');
   assert.match(validation, /permissions:\n  contents: read/);
   assert(!validation.includes('write'));
   assert(!validation.includes('secrets.'));
   assert(!validation.includes('pull_request_target'));
   assert.match(validation, /pull_request:\n    paths:/);
   assert.match(validation, /push:\n    paths:/);
+  assert.equal((validation.match(/'tools\/kody-autofix\/\*\*'/g) ?? []).length, 2);
+  assert.equal((validation.match(/'\.github\/workflows\/kody-fleet-autofix\.yml'/g) ?? []).length, 2);
+  assert.match(validation, /working-directory: tools\/kody-autofix\n/);
   // Pin a whole Node major and keep it in lockstep with every setup-node in the reusable workflow,
   // so a Renovate bump has to move all hosted helpers together instead of editing a literal here.
   const validationNode = [...validation.matchAll(/node-version: (\S+)\n/g)].map(m => m[1]);
@@ -280,7 +283,7 @@ test('dedicated hosted validation runs only read-only offline tests on narrow pa
   assert(reusableNode.length > 0);
   for (const version of reusableNode) assert.equal(version, validationNode[0]);
   assert.match(validation, /persist-credentials: false/);
-  assert.match(validation, /run: node --test \.github\/kody-autofix\/\*\.node-test\.mjs/);
+  assert.match(validation, /run: node --test tools\/kody-autofix\/\*\.node-test\.mjs/);
   assert(!validation.includes('claude-cli-fixture'));
   assert(!validation.includes('npm install'));
   assert(!validation.includes('fleet.mjs generate'));
