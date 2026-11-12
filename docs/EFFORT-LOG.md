@@ -17,7 +17,7 @@ Protocol: /Users/jay/apps/EFFORT-LOG-PROTOCOL.md (canonical). Live board: this f
   `[Unreleased]` and `[2.6.0]`; bullets cover only the actual commits between the
   v2.6.0 and v2.7.0 tags, grouped Added/Changed/Fixed. Companion action
   (Socratic.Trade lockfile resync) reported back as a no-op — the consumer's
-  `package.json` already pins `github:jaywedgeworth22/congress-trading-shared#v2.7.0`
+  `package.json` already pins `github:Simple-With-Us/congress-trading-shared#v2.7.0`
   and the lockfile already resolves to the published tag's peeled commit
   `5748e53` (which is tree-identical to the local-only `af11d70`); re-tinting the
   remote `v2.7.0` tag or pinning a commit in `package.json` would have violated
@@ -170,8 +170,8 @@ Protocol: /Users/jay/apps/EFFORT-LOG-PROTOCOL.md (canonical). Live board: this f
   resolution, enforce the same strict check in classic branch protection, and retain zero bypasses.
 - **Codex autofix reusable workflow: migrate from Anthropic to DeepSeek (MONET, S)** —
   COMPLETED 2026-07-10. Merged PR
-  [#140](https://github.com/jaywedgeworth22/congress-trading-shared/pull/140) (`f01bae3`) +
-  docs follow-up [#142](https://github.com/jaywedgeworth22/congress-trading-shared/pull/142).
+  [#140](https://github.com/Simple-With-Us/congress-trading-shared/pull/140) (`f01bae3`) +
+  docs follow-up [#142](https://github.com/Simple-With-Us/congress-trading-shared/pull/142).
   The Anthropic key funding the shared Codex autofix workflow was deleted, breaking the loop for
   every caller repo. Renamed the required `workflow_call` secret `ANTHROPIC_API_KEY` →
   `DEEPSEEK_API_KEY` (`GH_PAT` stays optional) and pointed `anthropics/claude-code-action@v1` at
@@ -336,7 +336,7 @@ Completed occurrence.
   evaluation (both superseded/dead, both predate `usageTelemetry.ts`/vitest/CI on `main` — recommended
   for deletion but not deleted here; resolves backlog t167). MERGED 2026-07-04. Consumer-side follow-up:
   Socratic.Trade PR #439 and Congress.Trade PR #139 (both switch their `package.json` to
-  `github:jaywedgeworth22/congress-trading-shared#semver:^1.2.x`).
+  `github:Simple-With-Us/congress-trading-shared#semver:^1.2.x`).
   _2026-07-05 (CLAUDE next-wave): CORRECTED — Socratic.Trade `main` actually pins the EXACT tag
   `git+https://...#v1.2.0`, not a semver range; only Congress.Trade uses `#semver:^1.2.x`. So:
   Socratic.Trade = exact `#v1.2.0` pin (requires an explicit pin-string bump each release);
@@ -421,7 +421,7 @@ Completed occurrence.
   **VERIFIED ALREADY FIXED — 2026-07-19, CLAUDE** (adversarial multi-agent re-audit of HEAD `1b0865d`, v1.10.0; each claim independently read + refute-checked). .github/workflows/ci.yml:62-73 installs from the public Git ref; coverage floors raised to 85/70/80/85.
 - **Prevent accidental registry publication and document the prepare-script requirement (CODEX, P2/S).**
   
-  **NEW EMPIRICAL RISK — 2026-07-19 CLAUDE, confirmed on a real clean install of `v1.11.0`.** The publish-guard half is fine (`package.json` `"private": true`). But the *prepare-script* half is now an ACTIVE consumer hazard, not just a docs gap: modern npm (observed on the Node 26 / npm 11 toolchain) gates lifecycle scripts behind an approval prompt and emitted `npm warn allow-scripts  @jaywedgeworth22/congress-trading-shared@1.11.0 (prepare: npm run build)` / `Run npm approve-scripts --allow-scripts-pending to review`. Because `dist/` is produced ONLY by `prepare`, a consumer whose npm blocks or defers that script installs a package with **no runtime files at all** — the failure looks like a broken/empty module, not a blocked script. This affects the documented tokenless path `github:jaywedgeworth22/congress-trading-shared#semver:^1.11.x`. Verified working when scripts ARE allowed: tsup ran, `dist/index.js` + `index.mjs` + `index.d.ts` + `index.d.mts` all emitted, and both CJS `require()` and ESM `import` resolved the new `normalizeSecurityRef` export. ACTION: document the `allow-scripts`/`approve-scripts` requirement in README + consumer bootstrap, and consider whether committing `dist/` or shipping a prebuilt tag is warranted given both consumers install straight from Git.
+  **NEW EMPIRICAL RISK — 2026-07-19 CLAUDE, confirmed on a real clean install of `v1.11.0`.** The publish-guard half is fine (`package.json` `"private": true`). But the *prepare-script* half is now an ACTIVE consumer hazard, not just a docs gap: modern npm (observed on the Node 26 / npm 11 toolchain) gates lifecycle scripts behind an approval prompt and emitted `npm warn allow-scripts  @jaywedgeworth22/congress-trading-shared@1.11.0 (prepare: npm run build)` / `Run npm approve-scripts --allow-scripts-pending to review`. Because `dist/` is produced ONLY by `prepare`, a consumer whose npm blocks or defers that script installs a package with **no runtime files at all** — the failure looks like a broken/empty module, not a blocked script. This affects the documented tokenless path `github:Simple-With-Us/congress-trading-shared#semver:^1.11.x`. Verified working when scripts ARE allowed: tsup ran, `dist/index.js` + `index.mjs` + `index.d.ts` + `index.d.mts` all emitted, and both CJS `require()` and ESM `import` resolved the new `normalizeSecurityRef` export. ACTION: document the `allow-scripts`/`approve-scripts` requirement in README + consumer bootstrap, and consider whether committing `dist/` or shipping a prebuilt tag is warranted given both consumers install straight from Git.
   Policy forbids npm publishing but package metadata has no `private`/prepublish guard. Git installs
   also produce no runtime files when lifecycle scripts are disabled because `dist/` is generated by
   `prepare`. Add a tested publish guard and make the lifecycle requirement/scratch verification
