@@ -10,13 +10,13 @@ tag over a moving branch.
 
 This repo needed **no code change** to support that: `package.json` already
 carries `"prepare": "npm run build"`, so `npm install
-github:jaywedgeworth22/congress-trading-shared#main` already builds `dist/`
+github:Simple-With-Us/congress-trading-shared#main` already builds `dist/`
 correctly on install. Proven with a clean scratch-dir install with
 `NODE_AUTH_TOKEN` unset:
 
 ```bash
 rm -rf node_modules package-lock.json package.json && npm init -y
-npm install github:jaywedgeworth22/congress-trading-shared#main
+npm install github:Simple-With-Us/congress-trading-shared#main
 node -e "console.log(Object.keys(require('@jaywedgeworth22/congress-trading-shared')).slice(0,5))"
 ```
 
@@ -95,7 +95,7 @@ Plus the standalone scratch-dir tokenless git-install proof above.
 ## Follow-ups
 
 - Consumers (Socratic.Trade, Congress.Trade) pin to
-  `github:jaywedgeworth22/congress-trading-shared#semver:^1.2.x` in a separate
+  `github:Simple-With-Us/congress-trading-shared#semver:^1.2.x` in a separate
   PR per repo, each verified with its own clean tokenless install before
   touching `package.json`.
 - Consider deleting the two stale branches (see verdict above) during a future

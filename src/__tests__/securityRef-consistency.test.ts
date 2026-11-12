@@ -39,16 +39,14 @@ describe("SecurityRef ↔ SecurityRefInput subset consistency", () => {
     expect("ticker" in SecurityRefInputSchema.shape).toBe(true);
   });
 
-  it("ticker maxLength differs: 10 (full) vs 20 (input)", () => {
-    // The full SecurityRefSchema enforces min(1).max(10)
+  it("ticker maxLength is 20 in both import and read schemas", () => {
     expect(
-      SecurityRefSchema.shape.ticker.safeParse("A".repeat(10)).success,
+      SecurityRefSchema.shape.ticker.safeParse("A".repeat(20)).success,
     ).toBe(true);
     expect(
-      SecurityRefSchema.shape.ticker.safeParse("A".repeat(11)).success,
+      SecurityRefSchema.shape.ticker.safeParse("A".repeat(21)).success,
     ).toBe(false);
 
-    // The input schema allows up to 20 (for raw/unvalidated tickers during import)
     expect(
       SecurityRefInputSchema.shape.ticker.safeParse("A".repeat(20)).success,
     ).toBe(true);

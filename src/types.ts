@@ -28,7 +28,9 @@ export type {
 
 export type {
   CongressTransaction,
+  CongressTransactionRead,
   TransactionsPage,
+  TransactionsQueryInput,
   TransactionsQuery,
   BundleResponse,
 } from "./schemas";
@@ -39,7 +41,9 @@ export type {
   FundamentalRow,
   AnalystRow,
   InsiderRow,
+  InsiderReadRow,
   ShortVolumeRow,
+  ShortVolumeReadRow,
 } from "./schemas";
 
 // ---- Analytics types ----
@@ -50,6 +54,7 @@ export type {
   ClusterBuy,
   MemberLeader,
   MemberPerformance,
+  MemberDualPerformance,
   BacktestHorizon,
   TickerBacktest,
   CommitteeConflict,
@@ -61,7 +66,7 @@ export type { SharePayload } from "./schemas";
 
 // ---- Push events (App A → App B) ----
 
-export type { CongressEventType, CongressEvent } from "./schemas";
+export type { CongressEventType, CongressEvent, CongressTradeEvent, CongressTradeData } from "./schemas";
 
 // ---- Snapshot/Export ----
 
@@ -98,14 +103,4 @@ export interface TickerAliasResolution {
 
 // ---- Shared constant (consolidated: canonical is in constants.ts) ----
 
-export { APP_B_ORIGIN_TAG as APP_B_ORIGIN } from "./constants";
-
-// ---- Event type list ----
-
-export const CONGRESS_EVENT_TYPES = [
-  "congress.trade",
-  "insider.update",
-  "ref.upsert",
-  "price.eod",
-  "spx.eod",
-] as const;
+export { APP_B_ORIGIN_TAG as APP_B_ORIGIN, CONGRESS_EVENT_TYPES } from "./constants";

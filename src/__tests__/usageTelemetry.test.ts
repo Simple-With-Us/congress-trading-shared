@@ -1,7 +1,17 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
+  createUsageTelemetryClient,
+  createUsageTelemetryV2Event,
   deriveUsageTelemetryIdempotencyKey,
+  deriveUsageTelemetryV2IdempotencyKey,
   UsageTelemetryEventSchema,
+  UsageTelemetryApiError,
+  UsageTelemetryV2BatchSchema,
+  UsageTelemetryProducerSchema,
+  UsageTelemetryKnownProviderSchema,
+  API_USAGE_MONITOR_HEALTH_PATH,
+  API_USAGE_MONITOR_READY_PATH,
+  type UsageTelemetryEventInput,
 } from "../usageTelemetry";
 import {
   CongressTransactionSchema,
@@ -9,17 +19,6 @@ import {
 } from "../schemas";
 
 // ---------------------------------------------------------------------------
-// Polyfill crypto.subtle for Node (vitest runs in Node, needs WebCrypto)
-// ---------------------------------------------------------------------------
-import { webcrypto } from "node:crypto";
-
-beforeAll(() => {
-  // Ensure crypto.subtle is available for SHA-256 hashing in tests
-  if (!globalThis.crypto?.subtle) {
-    globalThis.crypto = webcrypto as unknown as Crypto;
-  }
-});
-
 // ---------------------------------------------------------------------------
 // deriveUsageTelemetryIdempotencyKey — contract test vectors
 // ---------------------------------------------------------------------------
@@ -118,6 +117,15 @@ describe("deriveUsageTelemetryIdempotencyKey — contract vectors", () => {
     expect(key).toBe(
       "32a0a0b13d5b3edafd460655d6fb9b6d277c2f87c2c4be6460b1bcd2f3d701e0",
     );
+  });
+});
+
+describe("deriveUsageTelemetryV2IdempotencyKey — contract vectors", () => {
+  it("keys only stable producer and event identity", async () => {
+    await expect(deriveUsageTelemetryV2IdempotencyKey({
+      producerId: "socratic-trade",
+      eventId: "event-123",
+    })).resolves.toBe("7c279ae3726c337274cae8be0ce409952c360c2402209090c35ff77f1b061f31");
   });
 });
 
@@ -324,6 +332,88 @@ describe("deriveUsageTelemetryIdempotencyKey — edge cases", () => {
 });
 
 // ---------------------------------------------------------------------------
+// providerRequestId — additive field, MUST NOT change the idempotency key
+// ---------------------------------------------------------------------------
+
+describe("providerRequestId — idempotency key stays unchanged", () => {
+  it("key is byte-identical with vs without providerRequestId on the full parsed event", async () => {
+    // Same inputs as contract vector 4 above, so we can pin against its known hash.
+    const base = {
+      sourceApp: "congress-trade",
+      provider: "cloudflare",
+      metricType: "usage",
+      keyRef: "api-usage-monitor-lite",
+      occurredAt: "2026-01-15T10:30:00.000Z",
+    };
+
+    const withoutId = UsageTelemetryEventSchema.parse(base);
+    const withId = UsageTelemetryEventSchema.parse({
+      ...base,
+      providerRequestId: "gen-abc123xyz",
+    });
+
+    expect(withId.providerRequestId).toBe("gen-abc123xyz");
+    expect(withoutId.providerRequestId).toBeUndefined();
+
+    const keyWithoutId = await deriveUsageTelemetryIdempotencyKey(withoutId);
+    const keyWithId = await deriveUsageTelemetryIdempotencyKey(withId);
+
+    expect(keyWithId).toBeTruthy();
+    expect(keyWithId).toBe(keyWithoutId);
+    // Pin against the same contract vector used above (vector 4) to catch any
+    // accidental change to the basis/encoding, not just self-consistency.
+    expect(keyWithId).toBe(
+      "300ff3d978e9153e616c1e2d7d30d67cb20d6360fe37702df19f31e4338fcacb",
+    );
+  });
+
+  it("different providerRequestId values still collapse to the same key", async () => {
+    const base = {
+      sourceApp: "congress-trade",
+      provider: "openrouter",
+      metricType: "usage",
+      occurredAt: "2026-07-18T00:00:00.000Z",
+    };
+    const eventA = UsageTelemetryEventSchema.parse({ ...base, providerRequestId: "gen-aaa" });
+    const eventB = UsageTelemetryEventSchema.parse({ ...base, providerRequestId: "gen-bbb" });
+
+    const keyA = await deriveUsageTelemetryIdempotencyKey(eventA);
+    const keyB = await deriveUsageTelemetryIdempotencyKey(eventB);
+
+    expect(keyA).toBe(keyB);
+  });
+
+  it("accepts a well-formed providerRequestId and rejects an oversized one", () => {
+    const base = {
+      sourceApp: "congress-trade",
+      provider: "openrouter",
+      occurredAt: "2026-07-18T00:00:00.000Z",
+    };
+    expect(
+      UsageTelemetryEventSchema.safeParse({ ...base, providerRequestId: "gen-abc123" }).success,
+    ).toBe(true);
+    expect(
+      UsageTelemetryEventSchema.safeParse({ ...base, providerRequestId: "" }).success,
+    ).toBe(false);
+    expect(
+      UsageTelemetryEventSchema.safeParse({ ...base, providerRequestId: "x".repeat(201) }).success,
+    ).toBe(false);
+    expect(
+      UsageTelemetryEventSchema.safeParse({ ...base, providerRequestId: "x".repeat(200) }).success,
+    ).toBe(true);
+  });
+
+  it("is omitted entirely (not null/undefined key) when absent", () => {
+    const result = UsageTelemetryEventSchema.parse({
+      sourceApp: "congress-trade",
+      provider: "openrouter",
+      occurredAt: "2026-07-18T00:00:00.000Z",
+    });
+    expect("providerRequestId" in result).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Schema validation tests
 // ---------------------------------------------------------------------------
 
@@ -497,6 +587,46 @@ describe("schema validation", () => {
       expect(result.success).toBe(false);
     });
 
+    it.each(["balance", "limit", "quota_sync", "credit_balance"])(
+      "accepts monitor metricType %s",
+      (metricType) => {
+        expect(UsageTelemetryEventSchema.safeParse({ ...validEvent, metricType }).success).toBe(true);
+      },
+    );
+
+    it("trims identity fields and bounds metadata like the monitor", () => {
+      const metadata = Object.fromEntries(
+        Array.from({ length: 52 }, (_, index) => [` key-${index} `, "x".repeat(510)]),
+      );
+      const result = UsageTelemetryEventSchema.parse({
+        ...validEvent,
+        sourceApp: " congress-trade ",
+        provider: " cloudflare ",
+        metadata,
+      });
+      expect(result.sourceApp).toBe("congress-trade");
+      expect(result.provider).toBe("cloudflare");
+      expect(Object.keys(result.metadata ?? {})).toHaveLength(50);
+      expect(result.metadata?.["key-0"]).toHaveLength(500);
+    });
+
+    it("rejects whitespace-only required identity fields", () => {
+      expect(UsageTelemetryEventSchema.safeParse({ ...validEvent, provider: "   " }).success).toBe(false);
+    });
+
+    it("accepts subscription metricType and optional project", () => {
+      const result = UsageTelemetryEventSchema.safeParse({
+        ...validEvent,
+        metricType: "subscription",
+        project: "socratic-trade",
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.metricType).toBe("subscription");
+        expect(result.data.project).toBe("socratic-trade");
+      }
+    });
+
     it("applies defaults for billingMode and confidence", () => {
       const result = UsageTelemetryEventSchema.safeParse(validEvent);
       expect(result.success).toBe(true);
@@ -507,3 +637,174 @@ describe("schema validation", () => {
     });
   });
 });
+
+describe("createUsageTelemetryClient", () => {
+  it("sends a strict fresh v2 event and returns explicit counts", async () => {
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(
+      JSON.stringify({
+        ok: true,
+        schemaVersion: 2,
+        received: 1,
+        persisted: 1,
+        duplicates: 0,
+        pruned: 0,
+        rejected: 0,
+      }),
+      { status: 202, headers: { "content-type": "application/json" } },
+    ));
+    const client = createUsageTelemetryClient({
+      baseUrl: "https://usage.example.test/",
+      token: "secret",
+      producerId: "app",
+      producerInstanceId: "worker-a",
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    const event = {
+      eventId: "event-1",
+      provider: "provider",
+      occurredAt: "2026-07-11T00:00:00.000Z",
+    };
+
+    await expect(client.send([event])).resolves.toMatchObject({
+      ok: true,
+      schemaVersion: 2,
+      received: 1,
+      persisted: 1,
+    });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe("https://usage.example.test/api/ingest/usage");
+    expect(init?.headers).toEqual({
+      authorization: "Bearer secret",
+      "content-type": "application/json",
+      "x-usage-telemetry-version": "2",
+    });
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({
+      schemaVersion: 2,
+      producerId: "app",
+      producerInstanceId: "worker-a",
+    });
+    expect(body.events[0]).toMatchObject({
+      provider: "provider",
+      billingMode: "estimated",
+      metricType: "usage",
+      confidence: "estimated",
+    });
+    expect(body.events[0].eventId).toBe("event-1");
+    expect(body.events[0]).not.toHaveProperty("sourceApp");
+    expect(body.events[0]).not.toHaveProperty("idempotencyKey");
+    expect(UsageTelemetryV2BatchSchema.safeParse(body).success).toBe(true);
+  });
+
+  it("uses only an explicit durable v1 key while backlog drains and enforces producer identity", async () => {
+    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(
+      JSON.stringify({ ok: true, schemaVersion: 2, received: 1, persisted: 1, duplicates: 0, pruned: 0, rejected: 0 }),
+      { status: 202, headers: { "content-type": "application/json" } },
+    ));
+    const client = createUsageTelemetryClient({
+      baseUrl: "https://usage.example.test",
+      token: "secret",
+      producerId: "app",
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    const base = { sourceApp: "app", provider: "provider" } satisfies UsageTelemetryEventInput;
+
+    await expect(client.sendLegacyOutbox([base as never])).rejects.toThrow();
+    await expect(client.sendLegacyOutbox([{ ...base, idempotencyKey: "   " }])).rejects.toThrow();
+    await expect(client.sendLegacyOutbox([{
+      ...base,
+      sourceApp: "different-app",
+      idempotencyKey: "stable-call:wrong-producer",
+    }])).rejects.toThrow("sourceApp must match producerId app");
+    expect(fetchImpl).not.toHaveBeenCalled();
+    await client.sendLegacyOutbox([{ ...base, idempotencyKey: "stable-call:prompt" }]);
+    const body = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
+    expect(body.events[0].eventId).toBe("stable-call:prompt");
+  });
+
+  it("surfaces typed retry/backoff errors and rejects malformed success payloads", async () => {
+    const failedFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(
+      JSON.stringify({
+        ok: false,
+        schemaVersion: 2,
+        error: { code: "rate_limited", message: "Slow down", retryable: true, retryAfterSeconds: 45 },
+      }),
+      { status: 429, headers: { "content-type": "application/json", "retry-after": "30" } },
+    ));
+    const failedClient = createUsageTelemetryClient({
+      baseUrl: "https://usage.example.test",
+      token: "bad",
+      producerId: "app",
+      fetchImpl: failedFetch as typeof fetch,
+    });
+    const failure = failedClient.send([{ provider: "provider", eventId: "event-1" }]);
+    await expect(failure).rejects.toBeInstanceOf(UsageTelemetryApiError);
+    await expect(failure).rejects.toMatchObject({
+      status: 429,
+      code: "rate_limited",
+      retryable: true,
+      retryAfterSeconds: 45,
+    });
+
+    const malformedFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(
+      JSON.stringify({ ok: true }),
+      { status: 202, headers: { "content-type": "application/json" } },
+    ));
+    const malformedClient = createUsageTelemetryClient({
+      baseUrl: "https://usage.example.test",
+      token: "secret",
+      producerId: "app",
+      fetchImpl: malformedFetch as typeof fetch,
+    });
+    await expect(malformedClient.send([{ provider: "provider", eventId: "event-2" }])).rejects.toThrow();
+  });
+});
+
+describe("Usage Monitor routes, producer/provider schemas, and createUsageTelemetryV2Event", () => {
+  it("exports valid API route constants", () => {
+    expect(API_USAGE_MONITOR_HEALTH_PATH).toBe("/api/health");
+    expect(API_USAGE_MONITOR_READY_PATH).toBe("/api/ready");
+  });
+
+  it("validates producer identities", () => {
+    expect(UsageTelemetryProducerSchema.safeParse("congress-trade").success).toBe(true);
+    expect(UsageTelemetryProducerSchema.safeParse("socratic-trade").success).toBe(true);
+    expect(UsageTelemetryProducerSchema.safeParse("usage-monitor").success).toBe(true);
+    expect(UsageTelemetryProducerSchema.safeParse("unknown-app").success).toBe(false);
+  });
+
+  it("validates known provider identities", () => {
+    expect(UsageTelemetryKnownProviderSchema.safeParse("openrouter").success).toBe(true);
+    expect(UsageTelemetryKnownProviderSchema.safeParse("openai").success).toBe(true);
+    expect(UsageTelemetryKnownProviderSchema.safeParse("anthropic").success).toBe(true);
+    expect(UsageTelemetryKnownProviderSchema.safeParse("google-ai").success).toBe(true);
+    expect(UsageTelemetryKnownProviderSchema.safeParse("finnhub").success).toBe(true);
+    expect(UsageTelemetryKnownProviderSchema.safeParse("hetzner").success).toBe(true);
+    expect(UsageTelemetryKnownProviderSchema.safeParse("cloudflare").success).toBe(true);
+  });
+
+  it("creates valid v2 events with provided or auto-generated eventId", () => {
+    const customEvent = createUsageTelemetryV2Event({
+      eventId: "custom-id-123",
+      provider: "openrouter",
+      metricType: "usage",
+      quantity: 150,
+      unit: "token",
+    });
+    expect(customEvent.eventId).toBe("custom-id-123");
+    expect(customEvent.provider).toBe("openrouter");
+    expect(customEvent.quantity).toBe(150);
+
+    const autoEvent = createUsageTelemetryV2Event({
+      provider: "anthropic",
+      metricType: "cost",
+      costUsd: 0.005,
+    });
+    expect(typeof autoEvent.eventId).toBe("string");
+    expect(autoEvent.eventId.length).toBeGreaterThan(0);
+    expect(autoEvent.provider).toBe("anthropic");
+    expect(autoEvent.costUsd).toBe(0.005);
+  });
+});
+

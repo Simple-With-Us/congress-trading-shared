@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import {
   IsoDateSchema,
+  IsoDateTimeSchema,
   ChamberSchema,
   PartyBucketSchema,
   OwnerSchema,
@@ -19,6 +20,9 @@ import {
   ShortVolumeRowSchema,
   PriceSeriesSchema,
   SharePayloadSchema,
+  SharePayloadSchemaVersionSchema,
+  resolveSharePayloadSchemaVersion,
+  isSupportedSharePayloadSchemaVersion,
   CongressEventTypeSchema,
   CongressEventSchema,
   ConvictionTickerSchema,
@@ -38,9 +42,11 @@ import {
   ClientTradeSchema,
   BundleResponseSchema,
   TransactionsQuerySchema,
+  AmountBracketSchema,
   parseArray,
   parseSafe,
 } from "../schemas";
+import { SHARE_PAYLOAD_LEGACY_SCHEMA_VERSION, SHARE_PAYLOAD_SCHEMA_VERSION } from "../constants";
 
 // =============================================================================
 // IoDateSchema
@@ -77,6 +83,24 @@ describe("IsoDateSchema", () => {
 });
 
 // =============================================================================
+// IsoDateTimeSchema
+// =============================================================================
+
+describe("IsoDateTimeSchema", () => {
+  it("accepts valid ISO 8601 UTC date-time strings", () => {
+    expect(IsoDateTimeSchema.safeParse("2026-07-22T14:30:00Z").success).toBe(true);
+    expect(IsoDateTimeSchema.safeParse("2026-07-22T14:30:00.000Z").success).toBe(true);
+  });
+
+  it("rejects non-ISO date-time formats", () => {
+    expect(IsoDateTimeSchema.safeParse("2026-07-22 14:30:00").success).toBe(false);
+    expect(IsoDateTimeSchema.safeParse("2026-07-22").success).toBe(false);
+    expect(IsoDateTimeSchema.safeParse("invalid-datetime").success).toBe(false);
+    expect(IsoDateTimeSchema.safeParse(12345).success).toBe(false);
+  });
+});
+
+// =============================================================================
 // Enum schemas
 // =============================================================================
 
@@ -84,12 +108,15 @@ describe("ChamberSchema", () => {
   it("accepts valid chambers", () => {
     expect(ChamberSchema.safeParse("house").success).toBe(true);
     expect(ChamberSchema.safeParse("senate").success).toBe(true);
+    expect(ChamberSchema.safeParse("executive").success).toBe(true);
   });
 
   it("rejects invalid chambers", () => {
     expect(ChamberSchema.safeParse("congress").success).toBe(false);
     expect(ChamberSchema.safeParse("").success).toBe(false);
     expect(ChamberSchema.safeParse("HOUSE").success).toBe(false);
+    expect(ChamberSchema.safeParse("EXECUTIVE").success).toBe(false);
+    expect(ChamberSchema.safeParse("president").success).toBe(false);
   });
 });
 
@@ -122,10 +149,13 @@ describe("OwnerSchema", () => {
 });
 
 describe("TxTypeSchema", () => {
-  it("accepts valid transaction types", () => {
-    expect(TxTypeSchema.safeParse("P").success).toBe(true);
+  it("accepts B/S/E and coerces legacy P to B", () => {
+    expect(TxTypeSchema.safeParse("B").success).toBe(true);
     expect(TxTypeSchema.safeParse("S").success).toBe(true);
     expect(TxTypeSchema.safeParse("E").success).toBe(true);
+    const p = TxTypeSchema.safeParse("P");
+    expect(p.success).toBe(true);
+    if (p.success) expect(p.data).toBe("B");
   });
 
   it("rejects invalid transaction types", () => {
@@ -209,6 +239,11 @@ describe("PriceCloseSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  it("normalizes a wire-level null volume to an omitted optional value", () => {
+    expect(PriceCloseSchema.parse({ date: "2024-01-15", close: 185.25, volume: null }))
+      .toEqual({ date: "2024-01-15", close: 185.25, volume: undefined });
+  });
+
   it("rejects missing required fields", () => {
     expect(PriceCloseSchema.safeParse({ date: "2024-01-15" }).success).toBe(false);
     expect(PriceCloseSchema.safeParse({ close: 100 }).success).toBe(false);
@@ -259,10 +294,10 @@ describe("SecurityRefSchema", () => {
     expect(SecurityRefSchema.safeParse({ ...validRef, ticker: "" }).success).toBe(false);
   });
 
-  it("rejects ticker longer than 10 chars", () => {
-    expect(
-      SecurityRefSchema.safeParse({ ...validRef, ticker: "VERYLONGTICKER" }).success,
-    ).toBe(false);
+  it("accepts read tickers up to the same 20-character limit as imports", () => {
+    const ticker = "A".repeat(20);
+    expect(SecurityRefInputSchema.safeParse({ ticker }).success).toBe(true);
+    expect(SecurityRefSchema.safeParse({ ...validRef, ticker }).success).toBe(true);
   });
 
   it("accepts null for nullable fields", () => {
@@ -336,10 +371,8 @@ describe("SecurityRefInputSchema", () => {
     expect(SecurityRefInputSchema.safeParse({ ticker: "" }).success).toBe(false);
   });
 
-  it("allows longer ticker (up to 20) unlike SecurityRefSchema", () => {
-    // SecurityRefSchema max is 10, SecurityRefInputSchema max is 20
-    const result = SecurityRefInputSchema.safeParse({ ticker: "A".repeat(15) });
-    expect(result.success).toBe(true);
+  it("accepts ticker lengths up to 20", () => {
+    expect(SecurityRefInputSchema.safeParse({ ticker: "A".repeat(20) }).success).toBe(true);
   });
 
   it("rejects ticker longer than 20", () => {
@@ -373,9 +406,14 @@ describe("CongressTransactionSchema", () => {
     txType: "P",
     amountMin: 1001,
     amountMax: 15000,
+    estValue: 8000,
     isOption: false,
     capGainsOver200: false,
     rawText: "purchased Apple shares",
+    confidence: 0.95,
+    source: "primary",
+    createdAt: "2026-01-16T00:00:00Z",
+    cursorSeq: 50,
   };
 
   it("parses a valid transaction", () => {
@@ -430,7 +468,15 @@ describe("CongressTransactionSchema", () => {
   });
 
   it("accepts optional fields when absent", () => {
-    const result = CongressTransactionSchema.safeParse(validTx);
+    const {
+      estValue: _estValue,
+      confidence: _confidence,
+      source: _source,
+      createdAt: _createdAt,
+      cursorSeq: _cursorSeq,
+      ...minimalTx
+    } = validTx;
+    const result = CongressTransactionSchema.safeParse(minimalTx);
     expect(result.success).toBe(true);
   });
 
@@ -475,9 +521,14 @@ describe("TransactionsPageSchema", () => {
     txType: "P",
     amountMin: 1001,
     amountMax: 15000,
+    estValue: 8000,
     isOption: false,
     capGainsOver200: false,
     rawText: "purchased Apple shares",
+    confidence: 0.95,
+    source: "primary",
+    createdAt: "2026-01-16T00:00:00Z",
+    cursorSeq: 50,
   };
 
   it("parses a valid transactions page", () => {
@@ -537,6 +588,17 @@ describe("TransactionsPageSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("rejects read rows missing required cursor provenance", () => {
+    const { cursorSeq: _cursorSeq, ...withoutCursor } = validTx;
+    expect(TransactionsPageSchema.safeParse({
+      transactions: [withoutCursor],
+      cursor: 50,
+      count: 1,
+      total: 100,
+      limit: 20,
+    }).success).toBe(false);
+  });
 });
 
 // =============================================================================
@@ -567,6 +629,22 @@ describe("FundamentalRowSchema", () => {
       date: "2024-01-15",
     });
     expect(result.success).toBe(true);
+  });
+
+  it("normalizes nullable wire values and retains read metadata", () => {
+    expect(FundamentalRowSchema.parse({
+      ticker: "AAPL",
+      date: "2024-01-15",
+      peRatio: null,
+      source: null,
+      updatedAt: "2024-01-15T10:00:00Z",
+    })).toEqual({
+      ticker: "AAPL",
+      date: "2024-01-15",
+      peRatio: undefined,
+      source: undefined,
+      updatedAt: "2024-01-15T10:00:00Z",
+    });
   });
 
   it("rejects missing ticker", () => {
@@ -611,6 +689,21 @@ describe("AnalystRowSchema", () => {
       date: "2024-01-15",
     });
     expect(result.success).toBe(true);
+  });
+
+  it("normalizes nullable wire values and retains analyst metadata", () => {
+    const result = AnalystRowSchema.parse({
+      ticker: "AAPL",
+      date: "2024-01-15",
+      rating: null,
+      targetMean: null,
+      analystCount: 12,
+      source: "provider",
+      updatedAt: "2024-01-15T10:00:00Z",
+    });
+    expect(result).toMatchObject({ ticker: "AAPL", analystCount: 12, source: "provider" });
+    expect(result.rating).toBeUndefined();
+    expect(result.targetMean).toBeUndefined();
   });
 });
 
@@ -713,12 +806,26 @@ describe("PriceSeriesSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects empty closes", () => {
+  it("accepts empty closes", () => {
     const result = PriceSeriesSchema.safeParse({
       ticker: "AAPL",
       closes: [],
     });
     expect(result.success).toBe(true); // empty array is fine
+  });
+
+  it("normalizes nullable current price fields from the read API", () => {
+    expect(PriceSeriesSchema.parse({
+      ticker: "AAPL",
+      closes: [],
+      currentPrice: null,
+      currentPriceDate: null,
+    })).toEqual({
+      ticker: "AAPL",
+      closes: [],
+      currentPrice: undefined,
+      currentPriceDate: undefined,
+    });
   });
 
   it("rejects closes with invalid entry", () => {
@@ -761,7 +868,25 @@ describe("SharePayloadSchema", () => {
         { ticker: "AAPL", date: "2024-01-15", ratio: 0.3, elevated: false },
       ],
       fundamentals: [{ ticker: "AAPL", date: "2024-01-15", peRatio: 30 }],
-      analyst: [{ ticker: "AAPL", date: "2024-01-15", rating: "Buy" }],
+      analyst: [{ ticker: "AAPL", date: "2024-01-15", rating: "Buy", source: "fmp", asOfTimestamp: "2026-07-24T16:34:08Z" }],
+      trades: [
+        {
+          docId: "H-2026-20024100",
+          chamber: "house",
+          source: "house_clerk",
+          sourceUrl: "https://disclosures-clerk.house.gov/public_disc/ptr-pdf/2026/20024100.pdf",
+          filerName: "Nancy Pelosi",
+          ticker: "NVDA",
+          txType: "P",
+          transactionDate: "2026-07-15",
+          transactionTimestamp: "2026-07-15T00:00:00Z",
+          disclosureDate: "2026-07-22",
+          disclosureTimestamp: "2026-07-22T14:30:00Z",
+          extractedTimestamp: "2026-07-22T14:31:05Z",
+          amountMin: 1000001,
+          amountMax: 5000000,
+        },
+      ],
       origin: "app-b",
     });
     expect(result.success).toBe(true);
@@ -793,6 +918,49 @@ describe("SharePayloadSchema", () => {
       refs: [{ ticker: "" }],
     });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts the current schemaVersion and keeps it on the parsed payload", () => {
+    const result = SharePayloadSchema.safeParse({
+      schemaVersion: SHARE_PAYLOAD_SCHEMA_VERSION,
+      refs: [{ ticker: "AAPL" }],
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.schemaVersion).toBe(SHARE_PAYLOAD_SCHEMA_VERSION);
+  });
+
+  it("accepts a legacy payload without schemaVersion and leaves it unset", () => {
+    const result = SharePayloadSchema.safeParse({ refs: [{ ticker: "AAPL" }] });
+    expect(result.success).toBe(true);
+    expect(result.data).not.toHaveProperty("schemaVersion");
+  });
+
+  it("tolerates a newer schemaVersion so the receiver can decide", () => {
+    const result = SharePayloadSchema.safeParse({ schemaVersion: SHARE_PAYLOAD_SCHEMA_VERSION + 1 });
+    expect(result.success).toBe(true);
+  });
+
+  it.each([0, -1, 1.5, "1", null])("rejects malformed schemaVersion %j", (schemaVersion) => {
+    expect(SharePayloadSchema.safeParse({ schemaVersion }).success).toBe(false);
+    expect(SharePayloadSchemaVersionSchema.safeParse(schemaVersion).success).toBe(false);
+  });
+});
+
+describe("share payload schemaVersion helpers", () => {
+  it("exports version 1 as the current and legacy version", () => {
+    expect(SHARE_PAYLOAD_SCHEMA_VERSION).toBe(1);
+    expect(SHARE_PAYLOAD_LEGACY_SCHEMA_VERSION).toBe(1);
+  });
+
+  it("resolves an unversioned payload to the legacy version", () => {
+    expect(resolveSharePayloadSchemaVersion({})).toBe(SHARE_PAYLOAD_LEGACY_SCHEMA_VERSION);
+    expect(resolveSharePayloadSchemaVersion({ schemaVersion: 7 })).toBe(7);
+  });
+
+  it("flags only versions this package understands as supported", () => {
+    expect(isSupportedSharePayloadSchemaVersion({})).toBe(true);
+    expect(isSupportedSharePayloadSchemaVersion({ schemaVersion: SHARE_PAYLOAD_SCHEMA_VERSION })).toBe(true);
+    expect(isSupportedSharePayloadSchemaVersion({ schemaVersion: SHARE_PAYLOAD_SCHEMA_VERSION + 1 })).toBe(false);
   });
 });
 
@@ -850,6 +1018,17 @@ describe("CongressEventSchema", () => {
 
   it("rejects missing type", () => {
     expect(CongressEventSchema.safeParse({}).success).toBe(false);
+  });
+
+  it.each([
+    { type: "" },
+    { type: "   " },
+    { type: "custom", id: "" },
+    { type: "custom", seq: -1 },
+    { type: "custom", seq: 1.5 },
+    { type: "custom", emittedAt: "not-a-date" },
+  ])("rejects malformed event envelope %#", (event) => {
+    expect(CongressEventSchema.safeParse(event).success).toBe(false);
   });
 });
 
@@ -958,6 +1137,7 @@ describe("MemberPerformanceSchema", () => {
       medianExcess: 0.005,
       avgReturn: 0.01,
       avgExcess: 0.003,
+      avgAnnualizedExcess: 0.04,
     });
     expect(result.success).toBe(true);
   });
@@ -969,6 +1149,22 @@ describe("MemberPerformanceSchema", () => {
       medianExcess: null,
       avgReturn: null,
       avgExcess: null,
+      avgAnnualizedExcess: null,
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("MemberDualPerformanceSchema", () => {
+  it("parses dual-anchor envelope from App A", async () => {
+    const { MemberDualPerformanceSchema } = await import("../schemas");
+    const result = MemberDualPerformanceSchema.safeParse({
+      filerId: "P000197",
+      side: "buys",
+      buyCount: 20,
+      tradeDate: { scoredCount: 15, avgExcess: 0.02, winRate: 0.6 },
+      filingDate: { scoredCount: 14, avgExcess: 0.01, avgAnnualizedExcess: 0.03, winRate: 0.55 },
+      performance: { scoredCount: 15, avgExcess: 0.02 },
     });
     expect(result.success).toBe(true);
   });
@@ -1113,6 +1309,18 @@ describe("ClientMemberSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it("accepts executive chamber for OGE 278-T filers", () => {
+    const result = ClientMemberSchema.safeParse({
+      id: "m2",
+      name: "Jane President",
+      chamber: "executive",
+      party: null,
+      state: null,
+      photoUrl: null,
+    });
+    expect(result.success).toBe(true);
+  });
 });
 
 describe("ClientAssetSchema", () => {
@@ -1126,6 +1334,27 @@ describe("ClientAssetSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  it("parses valid asset with new optional fields", () => {
+    const result = ClientAssetSchema.safeParse({
+      name: "Apple Inc.",
+      ticker: "AAPL",
+      type: "stock",
+      sector: "Technology",
+      marketCapBucket: "mega",
+      companyName: "Apple Incorporated",
+      logoUrl: "https://logo.com/apple.png",
+      typeName: "Common Stock",
+      typeCategory: "equity",
+      typeCategoryLabel: "Equity",
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.companyName).toBe("Apple Incorporated");
+    expect(result.data?.logoUrl).toBe("https://logo.com/apple.png");
+    expect(result.data?.typeName).toBe("Common Stock");
+    expect(result.data?.typeCategory).toBe("equity");
+    expect(result.data?.typeCategoryLabel).toBe("Equity");
+  });
 });
 
 describe("ClientTransactionSchema", () => {
@@ -1136,6 +1365,7 @@ describe("ClientTransactionSchema", () => {
       owner: "self",
       amountMin: 1001,
       amountMax: 15000,
+      estValue: 8000,
       isOption: false,
     });
     expect(result.success).toBe(true);
@@ -1191,6 +1421,46 @@ describe("ClientTradeSchema", () => {
       source: "primary",
     });
     expect(result.success).toBe(true);
+  });
+
+  it("parses a valid client trade with manual source", () => {
+    const result = ClientTradeSchema.safeParse({
+      id: "trade-1",
+      cursor: 42,
+      docId: "doc-1",
+      member: {
+        id: "m1",
+        name: "John Doe",
+        chamber: "house",
+        party: "D",
+        state: "NY",
+        photoUrl: null,
+      },
+      asset: {
+        name: "Apple Inc.",
+        ticker: "AAPL",
+        type: "stock",
+        sector: "Technology",
+        marketCapBucket: "mega",
+      },
+      transaction: {
+        date: "2024-01-15",
+        type: "P",
+        owner: "self",
+        amountMin: 1001,
+        amountMax: 15000,
+        isOption: false,
+      },
+      filing: {
+        filedDate: "2024-01-16",
+        firstSeenAt: "2024-01-16T10:00:00Z",
+        sourceUrl: "https://example.com/doc",
+      },
+      confidence: 0.95,
+      source: "manual",
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.source).toBe("manual");
   });
 
   it("rejects invalid source", () => {
@@ -1280,7 +1550,7 @@ describe("TransactionsQuerySchema", () => {
 
   it("parses fully populated query", () => {
     const result = TransactionsQuerySchema.safeParse({
-      since: "2024-01-01",
+      since: "42",
       from: "2024-01-01",
       to: "2024-12-31",
       ticker: "AAPL",
@@ -1291,6 +1561,21 @@ describe("TransactionsQuerySchema", () => {
       order: "asc",
     });
     expect(result.success).toBe(true);
+  });
+
+  it.each(["42", 42, 0])("accepts numeric resume cursor %s", (since) => {
+    expect(TransactionsQuerySchema.safeParse({ since }).success).toBe(true);
+  });
+
+  it("rejects malformed cursor strings", () => {
+    expect(TransactionsQuerySchema.safeParse({ since: "42x" }).success).toBe(false);
+    expect(TransactionsQuerySchema.safeParse({ since: "2024-01-01" }).success).toBe(false);
+  });
+
+  it("accepts executive chamber", () => {
+    expect(
+      TransactionsQuerySchema.safeParse({ chamber: "executive" }).success,
+    ).toBe(true);
   });
 
   it("rejects invalid chamber", () => {
@@ -1414,5 +1699,36 @@ describe("parseSafe", () => {
   it("returns null for invalid enum", () => {
     const result = parseSafe(ChamberSchema, "congress");
     expect(result).toBeNull();
+  });
+});
+
+// =============================================================================
+// AmountBracketSchema
+// =============================================================================
+
+describe("AmountBracketSchema", () => {
+  it("accepts valid bracket with max > min", () => {
+    const result = AmountBracketSchema.safeParse({ min: 1000, max: 5000 });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts valid bracket with max === min", () => {
+    const result = AmountBracketSchema.safeParse({ min: 1000, max: 1000 });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts valid bracket with max === null", () => {
+    const result = AmountBracketSchema.safeParse({ min: 1000, max: null });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects bracket with max < min (inverted bounds)", () => {
+    const result = AmountBracketSchema.safeParse({ min: 5000, max: 1000 });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects negative min", () => {
+    const result = AmountBracketSchema.safeParse({ min: -100, max: 1000 });
+    expect(result.success).toBe(false);
   });
 });

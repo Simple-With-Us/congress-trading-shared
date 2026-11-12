@@ -8,7 +8,18 @@ import {
 
 // ---- Ticker normalization ----
 
-const WELL_FORMED_TICKER = /^[A-Z]{1,5}([.-][A-Z]{1,2})?$/;
+export const WELL_FORMED_TICKER = /^[A-Z]{1,5}(\^[A-Z0-9]{1,2}|[.-][A-Z]{1,2})?$/;
+
+const PLACEHOLDER_TICKERS = new Set(["", "-", "--", "---", "N/A", "NA", "NONE", "NULL", "—"]);
+
+/** Clean a raw symbol: trim, uppercase, drop surrounding quotes/brackets. */
+export function clean(raw: string | null | undefined): string {
+  return (raw ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/^[("'[\s]+|[)"'\]\s]+$/g, "")
+    .trim();
+}
 
 /** Normalize a raw ticker string: uppercase, strip whitespace, validate format. */
 export function normalizeTicker(raw: string | null | undefined): string | null {
@@ -16,6 +27,121 @@ export function normalizeTicker(raw: string | null | undefined): string | null {
   const cleaned = raw.trim().toUpperCase();
   if (!WELL_FORMED_TICKER.test(cleaned)) return null;
   return cleaned;
+}
+
+/** True when the raw value is a "no ticker" placeholder (dash, N/A, blank). */
+export function isPlaceholderTicker(raw: string | null | undefined): boolean {
+  const c = clean(raw);
+  return c === "" || PLACEHOLDER_TICKERS.has(c);
+}
+
+/** Strip a preferred/depositary `$`-series suffix: "T$A" → "T", "RF$E" → "RF". */
+export function stripPreferredSeries(sym: string): string {
+  return sym.replace(/\$[A-Z0-9]+$/, "");
+}
+
+/** Normalize common preferred/depositary-share ticker spellings. */
+export function normalizePreferredTickerVariant(raw: string | null | undefined): string | null {
+  const sym = clean(raw);
+  if (!sym) return null;
+
+  let m = /^([A-Z]{1,5})\^([A-Z0-9]{1,2})$/.exec(sym);
+  if (m) return `${m[1]}^${m[2]}`;
+
+  m = /^([A-Z]{1,5})\$([A-Z0-9]{1,2})$/.exec(sym);
+  if (m) return `${m[1]}^${m[2]}`;
+
+  m = /^([A-Z]{1,5})-P([A-Z0-9])$/.exec(sym);
+  if (m) return `${m[1]}^${m[2]}`;
+
+  m = /^([A-Z]{1,5})[.-]PR([A-Z0-9])$/.exec(sym);
+  if (m) return `${m[1]}^${m[2]}`;
+
+  m = /^([A-Z]{1,5})\s+PR\s+([A-Z0-9])$/.exec(sym);
+  if (m) return `${m[1]}^${m[2]}`;
+
+  m = /^([A-Z]{1,5})\s+P(?:R)?([A-Z0-9])$/.exec(sym);
+  if (m) return `${m[1]}^${m[2]}`;
+
+  return null;
+}
+
+function normalizedAssetText(value: string): string {
+  return value
+    .toUpperCase()
+    .replace(/&/g, " AND ")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function preferredIssuerName(assetName: string): string | null {
+  const idx = assetName.search(/\b(?:DEPOSITARY\s+SHARES?|PREFERRED|PREFERENCE|PFD|PREF)\b/i);
+  if (idx <= 0) return null;
+  return assetName.slice(0, idx).trim().replace(/[,;:\s]+$/g, "");
+}
+
+/** Resolve preferred/depositary-share descriptions that include no ticker. */
+export function resolvePreferredTickerFromAssetName(
+  assetName: string | null | undefined,
+  resolveIssuerTicker: (issuerName: string) => string | null,
+): string | null {
+  if (!assetName) return null;
+  const text = normalizedAssetText(assetName);
+  if (!/\b(?:DEPOSITARY SHARES?|PREFERRED|PREFERENCE|PFD|PREF)\b/.test(text)) return null;
+
+  if (text.includes("JPMORGAN CHASE") && text.includes("DEPOSITARY SHARES") && text.includes("SERIES GG")) {
+    return "JPM^J";
+  }
+
+  const series = /\bSERIES\s+([A-Z0-9]{1,3})\b/.exec(text)?.[1];
+  if (!series || series.length !== 1) return null;
+
+  const issuerName = preferredIssuerName(assetName);
+  if (!issuerName) return null;
+  const issuer = resolveIssuerTicker(issuerName);
+  return issuer ? `${issuer}^${series}` : null;
+}
+
+/** Distinct share-class punctuation variants. */
+export function punctuationVariants(sym: string): string[] {
+  return Array.from(
+    new Set([sym, sym.replace(/[.-]/g, ""), sym.replace(/\./g, "-"), sym.replace(/-/g, ".")]),
+  ).filter(Boolean);
+}
+
+/** True when `sym` is a syntactically valid ticker we'll accept without a master hit. */
+export function isWellFormedTicker(sym: string): boolean {
+  return WELL_FORMED_TICKER.test(sym);
+}
+
+/** Fallback ticker resolver logic. */
+export function resolveTickerDeterministic(
+  raw: string | null | undefined,
+  isKnown: (sym: string) => string | null,
+): string | null {
+  const cleaned = clean(raw);
+  if (cleaned === "" || PLACEHOLDER_TICKERS.has(cleaned)) return null;
+
+  const preferred = normalizePreferredTickerVariant(cleaned);
+  if (preferred) return preferred;
+
+  const base = stripPreferredSeries(cleaned) || cleaned;
+
+  for (const candidate of punctuationVariants(base)) {
+    const hit = isKnown(candidate);
+    if (hit) return hit;
+  }
+
+  const aliasCleaned = resolveContinuousTicker(cleaned);
+  if (aliasCleaned !== cleaned) return isKnown(aliasCleaned) ?? aliasCleaned;
+
+  const aliasBase = resolveContinuousTicker(base);
+  if (aliasBase !== base) return isKnown(aliasBase) ?? aliasBase;
+
+  if (isWellFormedTicker(base)) return base;
+
+  return null;
 }
 
 /**
@@ -113,12 +239,46 @@ export function bracketMidpoint(
 // ---- Date helpers ----
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATETIME_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]00:00)?$/;
 
 /** Check if a string is a valid YYYY-MM-DD date. */
 export function isIsoDate(s: string): boolean {
-  if (!ISO_DATE.test(s)) return false;
+  if (typeof s !== "string" || !ISO_DATE.test(s)) return false;
   const d = new Date(s + "T00:00:00Z");
   return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
+/** Check if a string is a valid ISO 8601 UTC date-time string (e.g. 2026-07-22T14:30:00Z). */
+export function isIsoDateTime(s: string): boolean {
+  if (typeof s !== "string" || !ISO_DATETIME_UTC.test(s)) return false;
+  const d = new Date(s);
+  return !isNaN(d.getTime());
+}
+
+/**
+ * Converts any Date, timestamp number, or date string into a canonical ISO 8601 UTC string (e.g. 2026-07-22T14:30:00.000Z).
+ * Returns null if the input is null, undefined, or invalid.
+ */
+export function toIsoUtcString(input: Date | number | string | null | undefined): string | null {
+  if (input == null) return null;
+  if (input instanceof Date) {
+    return isNaN(input.getTime()) ? null : input.toISOString();
+  }
+  if (typeof input === "number") {
+    if (!Number.isFinite(input)) return null;
+    const d = new Date(input);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  if (typeof input === "string") {
+    const trimmed = input.trim();
+    if (!trimmed) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      return `${trimmed}T00:00:00.000Z`;
+    }
+    const d = new Date(trimmed);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  return null;
 }
 
 /** Days between two YYYY-MM-DD strings. */
@@ -142,4 +302,157 @@ export function mergeRefs<T extends Record<string, unknown>>(
     }
   }
   return result as Partial<T>;
+}
+
+/** Standardize company name: title-case all-caps, normalize common suffixes, preserve key acronyms. */
+export function normalizeCompanyName(raw: string | null | undefined, ticker?: string | null): string | null {
+  if (!raw) return null;
+  let name = raw.trim();
+  if (!name) return null;
+
+  // Strip state of incorporation suffix (e.g. "/DE/", "/DE", "/CA")
+  name = name.replace(/\s*\/\s*[a-zA-Z]{2}\s*(?:\/|\b)/gi, " ");
+  name = name.replace(/\s{2,}/g, " ").trim();
+
+  // 1. Remove trailing stock exchanges in parentheses (e.g. "(NYSE)", "(NASDAQ: AAPL)")
+  name = name.replace(/\s*\([A-Z]+(?:\s*:\s*[A-Z]+)?\)\s*$/i, "");
+
+  // 2. Remove trailing slash
+  name = name.replace(/\/\s*$/g, "");
+
+  // If the name is exactly the ticker (case-insensitive), just return the uppercase ticker.
+  if (ticker && name.toLowerCase() === ticker.trim().toLowerCase()) {
+    return ticker.toUpperCase();
+  }
+
+  // Token map for casing corrections and abbreviations (lowercase key -> exact casing replacement)
+  const TOKEN_MAP: Record<string, string> = {
+    // Suffixes
+    inc: "Inc.",
+    "inc.": "Inc.",
+    llc: "LLC",
+    "llc.": "LLC",
+    llp: "LLP",
+    "llp.": "LLP",
+    plc: "PLC",
+    "plc.": "PLC",
+    corp: "Corp.",
+    "corp.": "Corp.",
+    co: "Co.",
+    "co.": "Co.",
+    ltd: "Ltd.",
+    "ltd.": "Ltd.",
+    lp: "LP",
+    "lp.": "LP",
+    nv: "NV",
+    "nv.": "NV",
+    ag: "AG",
+    "ag.": "AG",
+    sa: "SA",
+    "sa.": "SA",
+    bv: "BV",
+    "bv.": "BV",
+    // Acronyms
+    cbs: "CBS",
+    ibm: "IBM",
+    att: "AT&T",
+    amd: "AMD",
+    bp: "BP",
+    kkr: "KKR",
+    msci: "MSCI",
+    nrg: "NRG",
+    pnc: "PNC",
+    ubs: "UBS",
+    etf: "ETF",
+    reit: "REIT",
+    usa: "USA",
+    sec: "SEC",
+    nyse: "NYSE",
+    nasdaq: "NASDAQ",
+    spdr: "SPDR",
+    tsmc: "TSMC",
+    asml: "ASML",
+  };
+
+  const KEEP_UPPER = new Set([
+    "IBM",
+    "GE",
+    "CDW",
+    "AT&T",
+    "HP",
+    "AMD",
+    "LPL",
+    "ST",
+    "BEP",
+    "BWXT",
+    "LUV",
+    "TPR",
+    "SCI",
+    "WRB",
+    "ABT",
+    "FLEX",
+    "TSCO",
+  ]);
+
+  // 3. Word by word normalization
+  let wordIndex = 0;
+  name = name.replace(/[A-Za-z0-9&]+/g, (word) => {
+    wordIndex++;
+
+    // Check if the word matches the ticker (e.g. "Nvda" -> "NVDA")
+    if (ticker && word.toLowerCase() === ticker.toLowerCase()) {
+      return ticker.toUpperCase();
+    }
+
+    // If word is entirely uppercase
+    if (word.toUpperCase() === word && /[A-Z]/.test(word)) {
+      if (word.length <= 4 && !/[AEIOUY]/.test(word)) {
+        return word; // e.g. "LPL", "BWXT" - keep upper
+      }
+      if (KEEP_UPPER.has(word)) return word;
+
+      // Small words that shouldn't be capitalized in standard title case (unless first word)
+      if (["THE", "AND", "FOR", "OF", "IN", "ON", "AT", "TO"].includes(word)) {
+        return wordIndex === 1
+          ? word.charAt(0).toUpperCase() + word.substring(1).toLowerCase()
+          : word.toLowerCase();
+      }
+
+      // Title case it
+      return word.charAt(0).toUpperCase() + word.substring(1).toLowerCase();
+    }
+
+    // If word is entirely lowercase and > 1 char
+    if (word.toLowerCase() === word && word.length > 1 && /[a-z]/.test(word)) {
+      if (["the", "and", "for", "of", "in", "on", "at", "to"].includes(word)) {
+        return wordIndex === 1
+          ? word.charAt(0).toUpperCase() + word.substring(1).toLowerCase()
+          : word;
+      }
+      return word.charAt(0).toUpperCase() + word.substring(1);
+    }
+
+    return word;
+  });
+
+  // 4. Entity normalizations (case-insensitive)
+  // We use regex to specifically match entity boundaries and map them
+  name = name.replace(/\b([a-zA-Z&]+)(\.|\b)/g, (match, word, dot) => {
+    const key = (word + (dot || "")).toLowerCase();
+    const cleanKey = word.toLowerCase();
+    if (TOKEN_MAP[key]) {
+      return TOKEN_MAP[key];
+    }
+    if (TOKEN_MAP[cleanKey]) {
+      return TOKEN_MAP[cleanKey];
+    }
+    return match;
+  });
+
+  // Deduplicate double spaces and double periods
+  name = name.replace(/\s+([.,])/g, "$1");
+  name = name.replace(/\s{2,}/g, " ");
+  name = name.replace(/\.{2,}/g, ".");
+
+  return name.trim();
 }

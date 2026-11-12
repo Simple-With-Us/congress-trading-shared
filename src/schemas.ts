@@ -1,5 +1,13 @@
 import { z } from "zod";
 import { isIsoDate } from "./utils";
+import {
+  CONGRESS_EVENT_TYPES,
+  SHARE_PAYLOAD_LEGACY_SCHEMA_VERSION,
+  SHARE_PAYLOAD_SCHEMA_VERSION,
+} from "./constants";
+
+const nullAsUndefined = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((value) => value === null ? undefined : value, schema.optional());
 
 // ---- Chamber / Party / Owner ----
 
@@ -7,7 +15,14 @@ export const IsoDateSchema = z.string().refine(isIsoDate, {
   message: "Expected a valid YYYY-MM-DD date",
 });
 
-export const ChamberSchema = z.enum(["house", "senate"]);
+export const IsoDateTimeSchema = z.string().datetime({
+  message: "Expected a valid ISO 8601 UTC date-time string (e.g., 2026-07-22T14:30:00Z)",
+});
+export type IsoDateTime = z.infer<typeof IsoDateTimeSchema>;
+
+// "executive" covers OGE Form 278-T presidential/VP filers — the
+// executive-branch analogue of congressional STOCK Act disclosures.
+export const ChamberSchema = z.enum(["house", "senate", "executive"]);
 export type Chamber = z.infer<typeof ChamberSchema>;
 
 export const PartyBucketSchema = z.enum(["D", "R", "O"]);
@@ -16,8 +31,11 @@ export type PartyBucket = z.infer<typeof PartyBucketSchema>;
 export const OwnerSchema = z.enum(["self", "spouse", "joint", "dependent"]);
 export type Owner = z.infer<typeof OwnerSchema>;
 
-export const TxTypeSchema = z.enum(["P", "S", "E"]);
-export type TxType = z.infer<typeof TxTypeSchema>;
+/** B = Buy, S = Sell, E = Exchange. Legacy form letter P (Purchase) is accepted on parse and coerced to B. */
+export const TxTypeSchema = z
+  .enum(["B", "S", "E", "P"])
+  .transform((v): "B" | "S" | "E" => (v === "P" ? "B" : v));
+export type TxType = "B" | "S" | "E";
 
 export const AssetTypeCategorySchema = z.enum([
   "public_equity",
@@ -55,12 +73,12 @@ export type MktCapBucket = z.infer<typeof MktCapBucketSchema>;
 export const PriceCloseSchema = z.object({
   date: IsoDateSchema,
   close: z.number(),
-  volume: z.number().optional(),
+  volume: nullAsUndefined(z.number()),
 });
 export type PriceClose = z.infer<typeof PriceCloseSchema>;
 
 export const SecurityRefSchema = z.object({
-  ticker: z.string().min(1).max(10),
+  ticker: z.string().min(1).max(20),
   companyName: z.string().nullable(),
   sector: z.string().nullable(),
   industry: z.string().nullable(),
@@ -109,9 +127,22 @@ export const CongressTransactionSchema = z.object({
   txType: TxTypeSchema,
   amountMin: z.number().nullable(),
   amountMax: z.number().nullable(),
+  estValue: z.number().nullable().optional(),
   isOption: z.boolean(),
   capGainsOver200: z.boolean(),
   rawText: z.string(),
+  filingStatus: z.string().nullable().optional(),
+  subholding: z.string().nullable().optional(),
+  location: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  supplementalText: z.string().nullable().optional(),
+  confidence: z.number().optional(),
+  source: z.enum(["primary", "seed_dataset", "manual"]).optional(),
+  rowKey: z.string().nullable().optional(),
+  createdAt: z.string().optional(),
+  cursorSeq: z.number().int().nonnegative().optional(),
+  chamber: ChamberSchema.nullable().optional(),
+  memberName: z.string().nullable().optional(),
   filedDate: z.string().nullable().optional(),
   fullName: z.string().nullable().optional(),
   state: z.string().nullable().optional(),
@@ -128,18 +159,31 @@ export const CongressTransactionSchema = z.object({
 });
 export type CongressTransaction = z.infer<typeof CongressTransactionSchema>;
 
+/** Full transaction row returned by the cursor-paginated REST read endpoint. */
+export const CongressTransactionReadSchema = CongressTransactionSchema.extend({
+  confidence: z.number(),
+  source: z.enum(["primary", "seed_dataset", "manual"]),
+  createdAt: z.string(),
+  cursorSeq: z.number().int().nonnegative(),
+});
+export type CongressTransactionRead = z.infer<typeof CongressTransactionReadSchema>;
+
 export const TransactionsPageSchema = z.object({
-  transactions: z.array(CongressTransactionSchema),
-  cursor: z.number(),
-  count: z.number(),
-  total: z.number(),
-  limit: z.number(),
-  offset: z.number().optional(),
+  transactions: z.array(CongressTransactionReadSchema),
+  cursor: z.number().int().nonnegative(),
+  count: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+  limit: z.number().int().positive(),
+  offset: z.number().int().nonnegative().optional(),
+  filingsImportedToday: z.number().int().nonnegative().optional(),
 });
 export type TransactionsPage = z.infer<typeof TransactionsPageSchema>;
 
 export const TransactionsQuerySchema = z.object({
-  since: IsoDateSchema.optional(),
+  since: z.union([
+    z.string().regex(/^\d+$/, "Expected a non-negative integer cursor"),
+    z.number().int().nonnegative(),
+  ]).optional(),
   from: IsoDateSchema.optional(),
   to: IsoDateSchema.optional(),
   ticker: z.string().optional(),
@@ -149,6 +193,7 @@ export const TransactionsQuerySchema = z.object({
   limit: z.number().int().positive().optional(),
   order: z.enum(["asc", "desc"]).optional(),
 });
+export type TransactionsQueryInput = z.input<typeof TransactionsQuerySchema>;
 export type TransactionsQuery = z.infer<typeof TransactionsQuerySchema>;
 
 // ---- Import/Share payload (App B → App A) ----
@@ -156,33 +201,63 @@ export type TransactionsQuery = z.infer<typeof TransactionsQuerySchema>;
 export const FundamentalRowSchema = z.object({
   ticker: z.string(),
   date: IsoDateSchema,
-  peRatio: z.number().optional(),
-  eps: z.number().optional(),
-  beta: z.number().optional(),
-  dividendYield: z.number().optional(),
-  week52High: z.number().optional(),
-  week52Low: z.number().optional(),
-  fcfYield: z.number().optional(),
-  debtToEquity: z.number().optional(),
-  epsGrowth: z.number().optional(),
+  peRatio: nullAsUndefined(z.number()),
+  eps: nullAsUndefined(z.number()),
+  beta: nullAsUndefined(z.number()),
+  dividendYield: nullAsUndefined(z.number()),
+  week52High: nullAsUndefined(z.number()),
+  week52Low: nullAsUndefined(z.number()),
+  fcfYield: nullAsUndefined(z.number()),
+  debtToEquity: nullAsUndefined(z.number()),
+  epsGrowth: nullAsUndefined(z.number()),
+  source: nullAsUndefined(z.string()),
+  updatedAt: z.string().optional(),
 });
 export type FundamentalRow = z.infer<typeof FundamentalRowSchema>;
 
 export const AnalystRowSchema = z.object({
   ticker: z.string(),
   date: IsoDateSchema,
-  rating: z.string().optional(),
-  strongBuy: z.number().optional(),
-  buy: z.number().optional(),
-  hold: z.number().optional(),
-  sell: z.number().optional(),
-  strongSell: z.number().optional(),
-  targetMean: z.number().optional(),
-  targetHigh: z.number().optional(),
-  targetLow: z.number().optional(),
-  targetMedian: z.number().optional(),
+  rating: nullAsUndefined(z.string()),
+  strongBuy: nullAsUndefined(z.number()),
+  buy: nullAsUndefined(z.number()),
+  hold: nullAsUndefined(z.number()),
+  sell: nullAsUndefined(z.number()),
+  strongSell: nullAsUndefined(z.number()),
+  targetMean: nullAsUndefined(z.number()),
+  targetHigh: nullAsUndefined(z.number()),
+  targetLow: nullAsUndefined(z.number()),
+  targetMedian: nullAsUndefined(z.number()),
+  analystCount: nullAsUndefined(z.number()),
+  source: nullAsUndefined(z.string()),
+  updatedAt: z.string().optional(),
+  asOfTimestamp: nullAsUndefined(z.string()),
 });
 export type AnalystRow = z.infer<typeof AnalystRowSchema>;
+
+export const TradeEventRowSchema = z.object({
+  docId: z.string(),
+  chamber: ChamberSchema,
+  source: z.string(),
+  sourceUrl: nullAsUndefined(z.string()),
+  filerName: z.string(),
+  filerId: nullAsUndefined(z.string()),
+  party: nullAsUndefined(z.string()),
+  state: nullAsUndefined(z.string()),
+  district: nullAsUndefined(z.string()),
+  ticker: z.string(),
+  assetType: nullAsUndefined(z.string()),
+  assetDescription: nullAsUndefined(z.string()),
+  txType: z.string(),
+  transactionDate: IsoDateSchema,
+  transactionTimestamp: nullAsUndefined(z.string()),
+  disclosureDate: nullAsUndefined(IsoDateSchema),
+  disclosureTimestamp: nullAsUndefined(z.string()),
+  extractedTimestamp: nullAsUndefined(z.string()),
+  amountMin: nullAsUndefined(z.number()),
+  amountMax: nullAsUndefined(z.number()),
+});
+export type TradeEventRow = z.infer<typeof TradeEventRowSchema>;
 
 export const InsiderRowSchema = z.object({
   ticker: z.string(),
@@ -196,6 +271,16 @@ export const InsiderRowSchema = z.object({
 });
 export type InsiderRow = z.infer<typeof InsiderRowSchema>;
 
+/** Read-side shape returned by the ticker-scoped Congress.Trade insider endpoint. */
+export const InsiderReadRowSchema = InsiderRowSchema.extend({
+  sentiment: z.number().nullable(),
+  buyFilings: z.number().nullable(),
+  sellFilings: z.number().nullable(),
+  buyShares: z.number().nullable(),
+  sellShares: z.number().nullable(),
+});
+export type InsiderReadRow = z.infer<typeof InsiderReadRowSchema>;
+
 export const ShortVolumeRowSchema = z.object({
   ticker: z.string(),
   date: IsoDateSchema,
@@ -204,15 +289,29 @@ export const ShortVolumeRowSchema = z.object({
 });
 export type ShortVolumeRow = z.infer<typeof ShortVolumeRowSchema>;
 
+/** Read-side shape returned by the ticker-scoped Congress.Trade short-volume endpoint. */
+export const ShortVolumeReadRowSchema = ShortVolumeRowSchema.extend({
+  ratio: z.number().nullable(),
+});
+export type ShortVolumeReadRow = z.infer<typeof ShortVolumeReadRowSchema>;
+
 export const PriceSeriesSchema = z.object({
   ticker: z.string(),
   closes: z.array(PriceCloseSchema),
-  currentPrice: z.number().optional(),
-  currentPriceDate: IsoDateSchema.optional(),
+  currentPrice: nullAsUndefined(z.number()),
+  currentPriceDate: nullAsUndefined(IsoDateSchema),
 });
 export type PriceSeries = z.infer<typeof PriceSeriesSchema>;
 
+/**
+ * Envelope contract version.  Optional so unversioned senders keep working;  any positive integer
+ * is accepted so a receiver on an older package can see a newer version and decide (log or
+ * reject) via `isSupportedSharePayloadSchemaVersion` instead of failing the whole parse.
+ */
+export const SharePayloadSchemaVersionSchema = z.number().int().positive();
+
 export const SharePayloadSchema = z.object({
+  schemaVersion: SharePayloadSchemaVersionSchema.optional(),
   refs: z.array(SecurityRefInputSchema).optional(),
   spx: z.array(PriceCloseSchema).optional(),
   prices: z.array(PriceSeriesSchema).optional(),
@@ -220,9 +319,27 @@ export const SharePayloadSchema = z.object({
   shortVolume: z.array(ShortVolumeRowSchema).optional(),
   fundamentals: z.array(FundamentalRowSchema).optional(),
   analyst: z.array(AnalystRowSchema).optional(),
+  trades: z.array(TradeEventRowSchema).optional(),
   origin: z.string().optional(),
 });
 export type SharePayload = z.infer<typeof SharePayloadSchema>;
+
+/**
+ * The contract version a share payload was sent with.  Payloads without `schemaVersion` predate
+ * versioning and resolve to `SHARE_PAYLOAD_LEGACY_SCHEMA_VERSION`.
+ */
+export function resolveSharePayloadSchemaVersion(payload: Pick<SharePayload, "schemaVersion">): number {
+  return payload.schemaVersion ?? SHARE_PAYLOAD_LEGACY_SCHEMA_VERSION;
+}
+
+/**
+ * True when this package version understands the payload's contract version (legacy unversioned
+ * payloads included).  Receivers should log or reject a payload for which this returns false.
+ */
+export function isSupportedSharePayloadSchemaVersion(payload: Pick<SharePayload, "schemaVersion">): boolean {
+  const version = resolveSharePayloadSchemaVersion(payload);
+  return version >= SHARE_PAYLOAD_LEGACY_SCHEMA_VERSION && version <= SHARE_PAYLOAD_SCHEMA_VERSION;
+}
 
 export const BundleResponseSchema = z.object({
   ticker: z.string(),
@@ -234,29 +351,35 @@ export type BundleResponse = z.infer<typeof BundleResponseSchema>;
 
 // ---- Push events (App A → App B) ----
 
-export const CongressEventTypeSchema = z.enum([
-  "congress.trade",
-  "insider.update",
-  "ref.upsert",
-  "price.eod",
-  "spx.eod",
-]);
+export const CongressEventTypeSchema = z.enum(CONGRESS_EVENT_TYPES);
 export type CongressEventType = z.infer<typeof CongressEventTypeSchema>;
 
 export const CongressEventSchema = z.object({
-  type: CongressEventTypeSchema.or(z.string()),
-  id: z.string().optional(),
-  seq: z.number().optional(),
-  emittedAt: z.string().optional(),
+  type: CongressEventTypeSchema.or(z.string().trim().min(1)),
+  id: z.string().trim().min(1).optional(),
+  seq: z.number().int().nonnegative().optional(),
+  emittedAt: z.string().datetime().optional(),
   data: z.unknown().optional(),
 });
 export type CongressEvent = z.infer<typeof CongressEventSchema>;
+
+export const CongressTradeDataSchema = z.object({
+  trades: z.array(CongressTransactionSchema).optional(),
+  transaction: CongressTransactionSchema.optional(),
+});
+export type CongressTradeData = z.infer<typeof CongressTradeDataSchema>;
+
+export const CongressTradeEventSchema = CongressEventSchema.extend({
+  type: z.literal("congress.trade").or(z.literal("trade.new")),
+  data: CongressTradeDataSchema.optional(),
+});
+export type CongressTradeEvent = z.infer<typeof CongressTradeEventSchema>;
 
 // ---- Analytics ----
 
 export const ConvictionTickerSchema = z.object({
   ticker: z.string(),
-  name: z.string().optional(),
+  name: nullAsUndefined(z.string()),
   convictionScore: z.number().nullable(),
   direction: z.enum(["BUY", "SELL"]).nullable(),
   fallback: z.boolean().optional(),
@@ -267,12 +390,13 @@ export const ConvictionTickerSchema = z.object({
   netSentiment: z.number().optional(),
   estNetFlowUsd: z.number().optional(),
   parties: z.record(z.string(), z.number()).optional(),
+  components: z.record(z.string(), z.unknown()).optional(),
 });
 export type ConvictionTicker = z.infer<typeof ConvictionTickerSchema>;
 
 export const TickerLeaderSchema = z.object({
   ticker: z.string(),
-  name: z.string().optional(),
+  name: nullAsUndefined(z.string()),
   tradeCount: z.number().optional(),
   buyCount: z.number().optional(),
   sellCount: z.number().optional(),
@@ -284,34 +408,48 @@ export const TickerLeaderSchema = z.object({
 export type TickerLeader = z.infer<typeof TickerLeaderSchema>;
 
 export const ClusterBuySchema = z.object({
-  ticker: z.string().optional(),
-  name: z.string().optional(),
-  txType: z.string().optional(),
+  ticker: nullAsUndefined(z.string()),
+  name: nullAsUndefined(z.string()),
+  txType: nullAsUndefined(z.string()),
   memberCount: z.number().optional(),
   tradeCount: z.number().optional(),
   estVolumeUsd: z.number().optional(),
+  firstSeen: nullAsUndefined(z.string()),
+  lastSeen: nullAsUndefined(z.string()),
+  parties: z.record(z.string(), z.number()).optional(),
   topMembers: z.array(z.object({
-    filerId: z.string().optional(),
-    fullName: z.string().optional(),
-    memberName: z.string().optional(),
-    name: z.string().optional(),
+    filerId: nullAsUndefined(z.string()),
+    fullName: nullAsUndefined(z.string()),
+    memberName: nullAsUndefined(z.string()),
+    name: nullAsUndefined(z.string()),
+    partyBucket: PartyBucketSchema.nullable().optional(),
+    photoUrl: nullAsUndefined(z.string()),
     tradeCount: z.number().optional(),
   })).optional(),
 });
 export type ClusterBuy = z.infer<typeof ClusterBuySchema>;
 
 export const MemberLeaderSchema = z.object({
-  filerId: z.string().optional(),
-  fullName: z.string().optional(),
-  memberName: z.string().optional(),
-  name: z.string().optional(),
+  filerId: nullAsUndefined(z.string()),
+  fullName: nullAsUndefined(z.string()),
+  memberName: nullAsUndefined(z.string()),
+  name: nullAsUndefined(z.string()),
+  party: nullAsUndefined(z.string()),
+  partyBucket: PartyBucketSchema.nullable().optional(),
+  chamber: ChamberSchema.nullable().optional(),
+  state: nullAsUndefined(z.string()),
+  photoUrl: nullAsUndefined(z.string()),
   tradeCount: z.number().optional(),
+  buyCount: z.number().optional(),
+  sellCount: z.number().optional(),
+  uniqueTickers: z.number().optional(),
   estVolumeUsd: z.number().optional(),
   estNetFlowUsd: z.number().optional(),
   netSentiment: z.number().optional(),
 });
 export type MemberLeader = z.infer<typeof MemberLeaderSchema>;
 
+/** One performance leg (trade-date skill or filing-date copy-trade). */
 export const MemberPerformanceSchema = z.object({
   tradeCount: z.number().optional(),
   scoredCount: z.number().optional(),
@@ -320,8 +458,29 @@ export const MemberPerformanceSchema = z.object({
   medianExcess: z.number().nullable().optional(),
   avgReturn: z.number().nullable().optional(),
   avgExcess: z.number().nullable().optional(),
+  /** Filing-date leg only: excess annualized for Top Performers parity. */
+  avgAnnualizedExcess: z.number().nullable().optional(),
 });
 export type MemberPerformance = z.infer<typeof MemberPerformanceSchema>;
+
+/**
+ * Dual-anchor member performance from App A
+ * `GET /api/analytics/member/:filerId/performance`.
+ *
+ * - `tradeDate` — stock move since the politician's trade vs S&P (timing skill)
+ * - `filingDate` — move since public disclosure vs S&P (copy-trade for App B)
+ * - `performance` — legacy alias of `tradeDate` for older clients
+ */
+export const MemberDualPerformanceSchema = z.object({
+  filerId: z.string().optional(),
+  side: z.string().optional(),
+  buyCount: z.number().optional(),
+  tradeDate: MemberPerformanceSchema.nullable().optional(),
+  filingDate: MemberPerformanceSchema.nullable().optional(),
+  performance: MemberPerformanceSchema.nullable().optional(),
+  note: z.string().optional(),
+});
+export type MemberDualPerformance = z.infer<typeof MemberDualPerformanceSchema>;
 
 export const BacktestHorizonSchema = z.object({
   days: z.number(),
@@ -337,6 +496,7 @@ export type BacktestHorizon = z.infer<typeof BacktestHorizonSchema>;
 
 export const TickerBacktestSchema = z.object({
   ticker: z.string(),
+  filerId: z.string().nullable().optional(),
   txType: z.string(),
   totalBuyEvents: z.number(),
   pricedDays: z.number(),
@@ -345,15 +505,15 @@ export const TickerBacktestSchema = z.object({
 export type TickerBacktest = z.infer<typeof TickerBacktestSchema>;
 
 export const CommitteeConflictSchema = z.object({
-  id: z.string(),
-  ticker: z.string(),
+  id: z.string().nullable(),
+  ticker: z.string().nullable(),
   sector: z.string(),
-  txType: z.string(),
-  txDate: z.string(),
-  filerId: z.string(),
-  memberName: z.string(),
-  chamber: z.string(),
-  partyBucket: z.string(),
+  txType: z.string().nullable(),
+  txDate: z.string().nullable(),
+  filerId: z.string().nullable(),
+  memberName: z.string().nullable(),
+  chamber: z.string().nullable(),
+  partyBucket: PartyBucketSchema.nullable(),
   viaCommittees: z.array(z.string()),
   estAmountUsd: z.number(),
 });
@@ -395,6 +555,11 @@ export const ClientAssetSchema = z.object({
   type: z.string().nullable(),
   sector: z.string().nullable(),
   marketCapBucket: z.string().nullable(),
+  companyName: z.string().nullable().optional(),
+  logoUrl: z.string().nullable().optional(),
+  typeName: z.string().nullable().optional(),
+  typeCategory: z.string().nullable().optional(),
+  typeCategoryLabel: z.string().nullable().optional(),
 });
 export type ClientAsset = z.infer<typeof ClientAssetSchema>;
 
@@ -404,6 +569,7 @@ export const ClientTransactionSchema = z.object({
   owner: z.string().nullable(),
   amountMin: z.number().nullable(),
   amountMax: z.number().nullable(),
+  estValue: z.number().nullable().optional(),
   isOption: z.boolean(),
 });
 export type ClientTransaction = z.infer<typeof ClientTransactionSchema>;
@@ -424,9 +590,35 @@ export const ClientTradeSchema = z.object({
   transaction: ClientTransactionSchema,
   filing: ClientFilingSchema,
   confidence: z.number(),
-  source: z.enum(["primary", "seed_dataset"]),
+  source: z.enum(["primary", "seed_dataset", "manual"]),
 });
 export type ClientTrade = z.infer<typeof ClientTradeSchema>;
+
+// ---- STOCK Act brackets ----
+
+export const AmountBracketSchema = z.object({
+  min: z.number().finite().nonnegative(),
+  max: z.number().finite().nonnegative().nullable(),
+}).refine((data) => data.max === null || data.max >= data.min, {
+  message: "max must be greater than or equal to min",
+  path: ["max"],
+});
+
+// ---- Subscription (from CongressTradeClient.createSubscription) ----
+
+export const SubscriptionSchema = z.object({
+  id: z.string().min(1),
+  secret: z.string().min(16).max(256),
+  streamUrl: z.string().optional(),
+});
+
+// ---- SSE parser ----
+
+export const SseMessageSchema = z.object({
+  event: z.string().optional(),
+  id: z.string().optional(),
+  data: z.string(),
+});
 
 // ---- Helper: tolerant array parser ----
 
