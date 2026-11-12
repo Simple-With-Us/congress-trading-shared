@@ -30,6 +30,7 @@ export type {
   CongressTransaction,
   CongressTransactionRead,
   TransactionsPage,
+  TransactionsQueryInput,
   TransactionsQuery,
   BundleResponse,
 } from "./schemas";

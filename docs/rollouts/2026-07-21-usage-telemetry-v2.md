@@ -32,5 +32,5 @@ coverage, explicit persistence acknowledgement counts, and typed retry/backoff f
 
 ## Follow-ups
 
-Release immutable `v2.0.0`, then update Usage-Monitor, Congress.Trade Deno Deploy, and
+Release immutable `v2.0.0`, then update Usage-Monitor, Congress.Trade on Coolify, and
 Socratic.Trade to the exact tag and verify their durable-backlog drains.
