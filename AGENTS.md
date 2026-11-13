@@ -63,7 +63,7 @@ Recipients stay inside the closing bracket and use the destination's real mentio
 The sentence gap (a real U+00A0 plus a normal space, as below) after sentence terminators in **all** human-readable prose for every agent:
 README/doc prose, PR titles and bodies, commit messages, Zulip posts to #Work-In-Progress,
 Apple Notes, effort-board rows, review reports, design docs, and **chat replies to the
-owner**.  Owner, strengthened 2026-08-19 (in-conversation): "For any and all paragraphs
+owner (except the three chat panes listed below)**.  Owner, strengthened 2026-08-19 (in-conversation): "For any and all paragraphs
 in any context, always use 2 spaces to separate a period from the beginning of a new
 sentence." — not limited to product/UI copy.  HTML must preserve the gap (NBSP+space /
 `SENTENCE_GAP`).  Canonical: `/Users/jay/apps/FLEET-PROTOCOL.md` § Two spaces and
@@ -81,7 +81,7 @@ sentence." — not limited to product/UI copy.  HTML must preserve the gap (NBSP
 
 ## Execution Workflow
 
-- **Always Tagged**: Always explicitly identify as AG or Antigravity in Zulip messages and commits to avoid "untagged" ghost work.
+- **Always Tagged**: Use the verified assigned seat and the native session's current fleet header above in Zulip messages and commits; never infer identity from this repository.
 - **Pre-Coding Reservations**: Claim the Linear issue (`simple-board claim`) before writing a single line of code, ensuring the rest of the fleet sees the claims.
 - **Chunking**: Break large tasks into smaller, reviewable chunks (like discrete PRs or commits), even if executing them back-to-back. No more giant monolithic batches.
 - **Socialize First**: For cross-app changes (like API SDKs or UX overhauls), socialize the design in #Work-In-Progress before executing.
