@@ -321,12 +321,12 @@ test('the local caller forwards only secrets the vendored reusable declares', as
   assert(externalEnv, 'the pinned external reusable must set ANTHROPIC_BASE_URL on a real job or step');
   assert.equal(
     externalEnv.ANTHROPIC_BASE_URL,
-    "${{ vars.SWU_AUTOFIX_MODEL_BASE_URL == 'https://api.meta.ai' && 'https://api.meta.ai' || 'https://api.minimax.io/anthropic' }}",
+    "${{ vars.SWU_AUTOFIX_MODEL_BASE_URL == 'https://api.meta.ai' && 'https://api.meta.ai' || vars.SWU_AUTOFIX_MODEL_BASE_URL == 'https://openrouter.ai/api' && 'https://openrouter.ai/api' || 'https://api.minimax.io/anthropic' }}",
     'the external reusable must use the closed endpoint preset, never the free-form variable',
   );
   assert.equal(
     externalEnv.ANTHROPIC_AUTH_TOKEN,
-    "${{ vars.SWU_AUTOFIX_MODEL_BASE_URL == 'https://api.meta.ai' && (secrets.META_MODEL_API_TOKEN || 'MISSING-META-MODEL-API-TOKEN') || secrets.MINIMAX_API_KEY }}",
+    "${{ vars.SWU_AUTOFIX_MODEL_BASE_URL == 'https://api.meta.ai' && (secrets.META_MODEL_API_TOKEN || 'MISSING-META-MODEL-API-TOKEN') || vars.SWU_AUTOFIX_MODEL_BASE_URL == 'https://openrouter.ai/api' && (secrets.SWU_AUTOFIX_OPENROUTER_API_KEY || 'MISSING-OPENROUTER-API-KEY') || secrets.MINIMAX_API_KEY }}",
     'the external reusable must fail closed when the Meta credential is absent',
   );
 });
