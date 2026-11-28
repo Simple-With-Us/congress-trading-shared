@@ -280,12 +280,12 @@ test('the local caller forwards only secrets the vendored reusable declares', as
   assert.ok(externalPin, 'the external fleet reusable must stay pinned by SHA');
   assert.equal(
     externalPin[1],
-    'a4c48f013a2108be517ee933dccb1b37e9403920',
+    'f8e13e6baebc7fdbcb451b8b1a0b97822bd1fe0b',
     'the external reusable pin changed:  re-check that it still declares every secret this caller forwards, then update this expectation',
   );
   assert.deepEqual(
     Object.keys(externalJob.secrets ?? {}).sort(),
-    ['AUTOFIX_GITHUB_APP_PRIVATE_KEY', 'META_MODEL_API_TOKEN', 'MINIMAX_API_KEY', 'USAGE_INGEST_TOKEN'],
+    ['AUTOFIX_GITHUB_APP_PRIVATE_KEY', 'META_MODEL_API_TOKEN', 'MINIMAX_API_KEY', 'SWU_AUTOFIX_OPENROUTER_API_KEY', 'USAGE_INGEST_TOKEN'],
     'the secrets forwarded to the external reusable changed:  re-check the external declarations, then update this expectation',
   );
   assert.equal(externalJob.secrets?.META_MODEL_API_TOKEN, '${{ secrets.META_MODEL_API_TOKEN }}');
